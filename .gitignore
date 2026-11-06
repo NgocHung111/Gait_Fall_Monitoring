@@ -1,0 +1,15 @@
+# Python & Environment
+__pycache__/
+*.py[cod]
+.env
+venv/
+env/
+
+# PlatformIO & Embedded
+.pio/
+.vscode/.provider*
+.vscode/launch.json
+
+# System & OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1086 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fb">
+    <title>GaitWatch | Giám sát vận động</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1d2738;
+        --muted: #8490a2;
+        --line: #e9edf3;
+        --surface: #fff;
+        --canvas: #f5f7fb;
+        --blue: #4775f5;
+        --green: #2daf87;
+        --orange: #e9a23b;
+        --purple: #9670e8;
+        font-family: "DM Sans", sans-serif;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background: var(--canvas);
+      }
+      button { font: inherit; -webkit-tap-highlight-color: transparent; }
+      a { -webkit-tap-highlight-color: transparent; }
+      .app-shell { min-height: 100vh; }
+      .sidebar {
+        position: fixed;
+        z-index: 20;
+        inset: 0 auto 0 0;
+        display: flex;
+        width: 248px;
+        flex-direction: column;
+        padding: 28px 18px 20px;
+        border-right: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 53px 8px;
+        color: #233047;
+        font-family: "Manrope", sans-serif;
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        text-decoration: none;
+      }
+      .brand-light { color: #7e8ba0; font-weight: 600; }
+      .brand-mark {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 11px;
+        color: white;
+        background: #5278f4;
+        box-shadow: 0 5px 12px #5278f433;
+      }
+      .brand-mark svg { width: 24px; height: 24px; }
+      .sidebar-label {
+        margin: 0 0 12px 12px;
+        color: #a2adbd;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.15px;
+      }
+      .side-nav { display: grid; gap: 7px; }
+      .nav-link {
+        display: flex;
+        min-height: 45px;
+        align-items: center;
+        gap: 12px;
+        padding: 0 13px;
+        border-radius: 9px;
+        color: #738096;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: color 160ms ease, background 160ms ease;
+      }
+      .nav-link:hover { color: #4268de; background: #f5f7ff; }
+      .nav-link.active { color: #4268de; background: #edf2ff; }
+      .nav-icon {
+        display: inline-grid;
+        width: 20px;
+        place-items: center;
+        font-size: 19px;
+        line-height: 1;
+      }
+      .sidebar-spacer { flex: 1; }
+      .sidebar-note {
+        margin: 0 1px 18px;
+        padding: 15px 13px;
+        border: 1px solid #e8edff;
+        border-radius: 11px;
+        background: linear-gradient(135deg, #f8f9ff, #f0f4ff);
+      }
+      .note-icon { color: #6181ee; font-size: 17px; }
+      .sidebar-note p {
+        margin: 8px 0 0;
+        color: #7886a0;
+        font-size: 11px;
+        line-height: 1.6;
+      }
+      .profile {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 2px 0;
+        border-top: 1px solid var(--line);
+      }
+      .profile-avatar {
+        display: grid;
+        width: 35px;
+        height: 35px;
+        place-items: center;
+        border-radius: 50%;
+        color: #496bd1;
+        background: #eaf0ff;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .profile strong, .profile span { display: block; }
+      .profile strong { font-size: 11px; }
+      .profile div:nth-child(2) span {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .profile-menu { margin-left: auto; color: #9aa5b5; font-size: 20px; }
+      .main-content {
+        width: min(100% - 248px, 1600px);
+        min-height: 100vh;
+        margin-left: 248px;
+        padding: 0 42px 25px;
+      }
+      .topbar {
+        display: flex;
+        height: 72px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+      }
+      .breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #9aa5b5;
+        font-size: 11px;
+      }
+      .breadcrumb strong { color: #566278; font-weight: 600; }
+      .crumb-separator { color: #c3cad4; }
+      .topbar-actions { display: flex; align-items: center; gap: 17px; }
+      .live-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: #718097;
+        font-size: 11px;
+      }
+      .live-indicator i, .event-badge i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #33b58b;
+        box-shadow: 0 0 0 3px #33b58b1f;
+      }
+      .icon-button {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        color: #718097;
+        background: white;
+        cursor: pointer;
+        transition: background 160ms ease, transform 160ms ease;
+      }
+      .icon-button:hover { transform: translateY(-1px); background: #f8faff; }
+      .icon-button svg { width: 17px; height: 17px; }
+      .page-heading {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 18px;
+        margin: 31px 0 21px;
+      }
+      .eyebrow {
+        margin: 0 0 8px;
+        color: #92a0b4;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 1.35px;
+      }
+      h1, h2, p { margin-top: 0; }
+      h1, h2 { font-family: "Manrope", sans-serif; }
+      h1 {
+        margin-bottom: 7px;
+        font-size: clamp(24px, 2.4vw, 30px);
+        font-weight: 700;
+        letter-spacing: -1.15px;
+      }
+      .page-subtitle { margin-bottom: 0; color: #8793a5; font-size: 12px; }
+      .date-chip, .period-chip {
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: #69778d;
+        background: white;
+        font-size: 10px;
+      }
+      .date-chip { gap: 8px; padding: 10px 12px; }
+      .calendar-icon { color: #8290a5; font-size: 14px; }
+      .connection-bar {
+        display: flex;
+        min-height: 47px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 17px;
+        padding: 6px 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: #fff;
+      }
+      .connection-state {
+        display: inline-flex;
+        min-width: 175px;
+        align-items: center;
+        gap: 8px;
+        color: #7d899b;
+        font-size: 10px;
+      }
+      .connection-dot {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 7px;
+        border-radius: 50%;
+        background: #e4a344;
+        box-shadow: 0 0 0 3px #e4a3441e;
+      }
+      .connection-dot.connected { background: #31ad84; box-shadow: 0 0 0 3px #31ad841f; }
+      .connection-dot.error { background: #e36a70; box-shadow: 0 0 0 3px #e36a701f; }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 15px;
+        margin-bottom: 17px;
+      }
+      .stat-card, .panel {
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--surface);
+        box-shadow: 0 3px 12px #26334b05;
+      }
+      .stat-card {
+        position: relative;
+        min-height: 155px;
+        overflow: hidden;
+        padding: 16px 16px 18px;
+      }
+      .stat-card-top { display: flex; align-items: center; gap: 9px; }
+      .stat-icon {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        flex: 0 0 28px;
+        place-items: center;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .steps-icon { color: #5278f4; background: #eff3ff; }
+      .cadence-icon { color: #2da987; background: #eaf8f3; }
+      .interval-icon { color: #db9738; background: #fff6e8; }
+      .variability-icon { color: #9470df; background: #f4efff; }
+      .stat-label {
+        overflow: hidden;
+        color: #738096;
+        font-size: 10px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .stat-more { margin-left: auto; color: #aab4c2; font-size: 18px; letter-spacing: 1px; line-height: 1; }
+      .stat-value {
+        position: relative;
+        z-index: 1;
+        margin: 16px 0 6px;
+        font-family: "Manrope", sans-serif;
+        font-size: clamp(24px, 2.3vw, 31px);
+        font-weight: 700;
+        letter-spacing: -1px;
+        line-height: 1.1;
+      }
+      .stat-value small {
+        color: #9aa5b5;
+        font-family: "DM Sans", sans-serif;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0;
+      }
+      .stat-foot {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        min-height: 14px;
+        align-items: center;
+        color: #a0aaba;
+        font-size: 9px;
+      }
+      .stat-sparkline {
+        position: absolute;
+        right: 12px;
+        bottom: -1px;
+        display: flex;
+        height: 29px;
+        align-items: flex-end;
+        gap: 3px;
+        opacity: .48;
+      }
+      .stat-sparkline i { width: 4px; border-radius: 4px 4px 0 0; background: currentColor; }
+      .stat-sparkline i:nth-child(1), .stat-sparkline i:nth-child(7) { height: 9px; }
+      .stat-sparkline i:nth-child(2), .stat-sparkline i:nth-child(5), .stat-sparkline i:nth-child(9) { height: 16px; }
+      .stat-sparkline i:nth-child(3), .stat-sparkline i:nth-child(8) { height: 12px; }
+      .stat-sparkline i:nth-child(4), .stat-sparkline i:nth-child(10) { height: 24px; }
+      .sparkline-blue { color: #7d9aff; }
+      .sparkline-green { color: #75c9ae; }
+      .sparkline-orange { color: #efbd75; }
+      .sparkline-purple { color: #b19be9; }
+      .content-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+        gap: 16px;
+        margin-bottom: 17px;
+      }
+      .panel { min-width: 0; padding: 19px 19px 15px; }
+      .panel-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .panel-heading .eyebrow { margin-bottom: 5px; font-size: 8px; }
+      h2 { margin-bottom: 0; font-size: 15px; font-weight: 700; letter-spacing: -.35px; }
+      .period-chip { padding: 7px 9px; color: #8490a2; font-size: 9px; }
+      .chart-wrap { position: relative; height: 202px; margin-top: 17px; }
+      .chart-wrap canvas { width: 100% !important; height: 100% !important; }
+      .chart-empty {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 7px;
+        color: #8793a5;
+        font-size: 11px;
+        text-align: center;
+        pointer-events: none;
+      }
+      .chart-empty span { color: #a3adbb; font-size: 9px; }
+      .chart-empty[hidden], .map-empty[hidden] { display: none; }
+      .chart-legend {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-top: 8px;
+        color: #8793a5;
+        font-size: 9px;
+      }
+      .legend-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+      .blue-dot { background: #5278f4; }
+      .green-dot { background: #2daf87; }
+      .orange-dot { background: #e9a23b; }
+      .purple-dot { background: #9670e8; }
+      .gait-legend { gap: 13px; }
+      .gait-legend span { display: inline-flex; align-items: center; gap: 5px; }
+      .map-panel { padding-bottom: 13px; }
+      .map-heading { align-items: center; margin-bottom: 14px; }
+      .panel-subtitle { margin: 5px 0 0; color: #99a4b3; font-size: 10px; }
+      .event-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 9px;
+        border: 1px solid #e5f4ed;
+        border-radius: 20px;
+        color: #4a9b7d;
+        background: #f1faf6;
+        font-size: 9px;
+        white-space: nowrap;
+      }
+      .event-badge.alert { border-color: #f8e2de; color: #ce6a5e; background: #fff6f4; }
+      .event-badge.alert i { background: #e57265; box-shadow: 0 0 0 3px #e572651e; }
+      .map-frame {
+        position: relative;
+        height: 230px;
+        overflow: hidden;
+        border: 1px solid #e5eaf0;
+        border-radius: 8px;
+        background: #eaf0f3;
+      }
+      #fall-map { width: 100%; height: 100%; }
+      .map-empty {
+        position: absolute;
+        z-index: 500;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 7px;
+        color: #75839a;
+        background: #f8fafbcc;
+        font-size: 10px;
+        text-align: center;
+        pointer-events: none;
+      }
+      .map-empty strong { color: #5b6880; font-size: 12px; }
+      .map-empty-icon { color: #6480e7; font-size: 24px; }
+      .map-footer {
+        display: flex;
+        min-height: 36px;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+        color: #98a3b2;
+        font-size: 9px;
+      }
+      .map-footer a { color: #5278f4; font-weight: 600; text-decoration: none; }
+      .map-footer a:hover { text-decoration: underline; }
+      .page-footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 17px 2px 0;
+        color: #a0aab8;
+        font-size: 9px;
+      }
+      .leaflet-control-attribution { font-size: 8px !important; }
+      @media (min-width: 1500px) {
+        .main-content { margin-right: auto; padding-right: 54px; padding-left: 54px; }
+      }
+      @media (max-width: 1180px) {
+        .main-content { padding-right: 25px; padding-left: 25px; }
+        .sidebar { width: 220px; }
+        .main-content { width: calc(100% - 220px); margin-left: 220px; }
+        .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .stat-card { min-height: 145px; }
+      }
+      @media (max-width: 820px) {
+        .sidebar { width: 68px; align-items: center; padding: 19px 9px 13px; }
+        .brand { margin: 0 0 37px; }
+        .brand > span:last-child, .sidebar-label, .nav-link:not(.active), .nav-link.active { font-size: 0; }
+        .nav-link { width: 45px; justify-content: center; padding: 0; }
+        .nav-link .nav-icon { font-size: 19px; }
+        .sidebar-note, .profile > div:nth-child(2), .profile-menu { display: none; }
+        .profile { border: 0; }
+        .main-content { width: calc(100% - 68px); margin-left: 68px; }
+        .content-grid { grid-template-columns: 1fr; }
+        .chart-wrap { height: 220px; }
+      }
+      @media (max-width: 560px) {
+        .main-content { padding: 0 14px 20px; }
+        .topbar { height: 58px; }
+        .live-indicator { font-size: 0; }
+        .page-heading { align-items: flex-start; flex-direction: column; margin-top: 23px; }
+        .date-chip { padding: 8px 10px; }
+        .connection-bar { align-items: flex-start; flex-direction: column; padding: 10px; }
+        .connection-state { min-width: 0; }
+        .stats-grid { gap: 10px; }
+        .stat-card { min-height: 135px; padding: 13px 11px 15px; }
+        .stat-card-top { gap: 6px; }
+        .stat-icon { width: 25px; height: 25px; flex-basis: 25px; }
+        .stat-label { font-size: 9px; }
+        .stat-more { display: none; }
+        .stat-value { margin-top: 15px; font-size: 24px; }
+        .stat-foot { font-size: 8px; }
+        .panel { padding: 15px 12px 13px; }
+        .panel-heading { gap: 6px; }
+        .period-chip { padding: 6px 7px; font-size: 8px; }
+        .chart-wrap { height: 205px; margin-top: 12px; }
+        .gait-legend { gap: 8px; font-size: 8px; }
+        .map-frame { height: 205px; }
+        .map-heading { align-items: flex-start; flex-direction: column; }
+        .page-footer { font-size: 8px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Điều hướng chính">
+        <a class="brand" href="#" aria-label="GaitWatch trang chủ">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none">
+              <path d="M5 18h5l3-9 5.2 16L22 14l2 4h3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span>gait<span class="brand-light">watch</span></span>
+        </a>
+
+        <div class="sidebar-label">TỔNG QUAN</div>
+        <nav class="side-nav">
+          <a class="nav-link active" href="#overview" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">◫</span>
+            Bảng điều khiển
+          </a>
+          <a class="nav-link" href="#gait-section">
+            <span class="nav-icon" aria-hidden="true">⌁</span>
+            Phân tích dáng đi
+          </a>
+          <a class="nav-link" href="#map-section">
+            <span class="nav-icon" aria-hidden="true">⌖</span>
+            Vị trí té ngã
+          </a>
+        </nav>
+
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-note">
+          <span class="note-icon" aria-hidden="true">✦</span>
+          <p>Theo dõi chuyển động<br>để an tâm mỗi ngày.</p>
+        </div>
+        <div class="profile">
+          <div class="profile-avatar" aria-hidden="true">GW</div>
+          <div>
+            <strong>Gait Monitor</strong>
+            <span>Thiết bị ESP32</span>
+          </div>
+          <span class="profile-menu" aria-hidden="true">···</span>
+        </div>
+      </aside>
+
+      <main class="main-content" id="overview">
+        <header class="topbar">
+          <div class="breadcrumb"><span>Trang chủ</span><span class="crumb-separator">/</span><strong>Tổng quan</strong></div>
+          <div class="topbar-actions">
+            <span class="live-indicator"><i></i> Đồng bộ tự động</span>
+            <button class="icon-button" id="refresh-button" type="button" aria-label="Làm mới dữ liệu" title="Làm mới dữ liệu">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 9A7.5 7.5 0 0 1 18 6l2 6M4 17v-5h5m10.2 3A7.5 7.5 0 0 1 6 18l-2-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">GIÁM SÁT SỨC KHỎE</p>
+            <h1>Tổng quan vận động</h1>
+            <p class="page-subtitle">Theo dõi bước chân, dáng đi và trạng thái an toàn của bạn.</p>
+          </div>
+          <div class="date-chip">
+            <span class="calendar-icon" aria-hidden="true">▦</span>
+            <span id="current-date">Hôm nay</span>
+          </div>
+        </section>
+
+        <section class="connection-bar" aria-label="Kết nối backend">
+          <div class="connection-state">
+            <span class="connection-dot" id="connection-dot"></span>
+            <span id="connection-label">Đang kết nối backend…</span>
+          </div>
+        </section>
+
+        <section class="stats-grid" aria-label="Thống kê vận động">
+          <article class="stat-card">
+            <div class="stat-card-top">
+              <span class="stat-icon steps-icon" aria-hidden="true">↗</span>
+              <span class="stat-label">Tổng số bước</span>
+              <span class="stat-more" aria-hidden="true">···</span>
+            </div>
+            <div class="stat-value" id="steps-value">—</div>
+            <div class="stat-foot"><span class="stat-hint">Bản ghi mới nhất từ thiết bị</span></div>
+            <div class="stat-sparkline sparkline-blue" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-card-top">
+              <span class="stat-icon cadence-icon" aria-hidden="true">⌁</span>
+              <span class="stat-label">Cadence</span>
+              <span class="stat-more" aria-hidden="true">···</span>
+            </div>
+            <div class="stat-value"><span id="cadence-value">—</span><small> bước/phút</small></div>
+            <div class="stat-foot"><span class="stat-hint">Nhịp bước trung bình</span></div>
+            <div class="stat-sparkline sparkline-green" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-card-top">
+              <span class="stat-icon interval-icon" aria-hidden="true">◷</span>
+              <span class="stat-label">Khoảng bước</span>
+              <span class="stat-more" aria-hidden="true">···</span>
+            </div>
+            <div class="stat-value"><span id="interval-value">—</span><small> ms</small></div>
+            <div class="stat-foot"><span class="stat-hint">Thời gian trung bình mỗi bước</span></div>
+            <div class="stat-sparkline sparkline-orange" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-card-top">
+              <span class="stat-icon variability-icon" aria-hidden="true">⌇</span>
+              <span class="stat-label">Biến thiên dáng đi</span>
+              <span class="stat-more" aria-hidden="true">···</span>
+            </div>
+            <div class="stat-value"><span id="variability-value">—</span><small> CV%</small></div>
+            <div class="stat-foot"><span class="stat-hint">Hệ số biến thiên khoảng bước</span></div>
+            <div class="stat-sparkline sparkline-purple" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </article>
+        </section>
+
+        <section class="content-grid" id="gait-section">
+          <article class="panel steps-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">HOẠT ĐỘNG</p>
+                <h2>Theo dõi bước chân</h2>
+              </div>
+              <span class="period-chip">Lịch sử nhận được</span>
+            </div>
+            <div class="chart-wrap steps-chart-wrap">
+              <canvas id="steps-chart" aria-label="Biểu đồ tổng số bước theo thời gian"></canvas>
+              <div class="chart-empty" id="steps-empty">Chưa có dữ liệu telemetry.<br><span>Biểu đồ sẽ cập nhật khi backend nhận dữ liệu từ ESP32.</span></div>
+            </div>
+            <div class="chart-legend"><span class="legend-dot blue-dot"></span>Tổng số bước</div>
+          </article>
+
+          <article class="panel gait-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">PHÂN TÍCH CHUYỂN ĐỘNG</p>
+                <h2>Đặc trưng dáng đi</h2>
+              </div>
+              <span class="period-chip">Theo telemetry</span>
+            </div>
+            <div class="chart-wrap gait-chart-wrap">
+              <canvas id="gait-chart" aria-label="Biểu đồ cadence, khoảng bước và biến thiên"></canvas>
+              <div class="chart-empty" id="gait-empty">Chưa có dữ liệu thời gian bước.<br><span>Gửi step_timestamps_ms hoặc step_intervals_ms để phân tích.</span></div>
+            </div>
+            <div class="chart-legend gait-legend">
+              <span><i class="legend-dot green-dot"></i>Cadence</span>
+              <span><i class="legend-dot orange-dot"></i>Khoảng bước</span>
+              <span><i class="legend-dot purple-dot"></i>CV%</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel map-panel" id="map-section">
+          <div class="panel-heading map-heading">
+            <div>
+              <p class="eyebrow">AN TOÀN</p>
+              <h2>Định vị sự kiện té ngã</h2>
+              <p class="panel-subtitle">Vị trí được xác định từ các điểm truy cập Wi-Fi gửi bởi ESP32.</p>
+            </div>
+            <span class="event-badge" id="fall-status"><i></i> Chưa có sự kiện</span>
+          </div>
+          <div class="map-frame">
+            <div id="fall-map" role="application" aria-label="Bản đồ vị trí té ngã"></div>
+            <div class="map-empty" id="map-empty">
+              <span class="map-empty-icon" aria-hidden="true">⌖</span>
+              <strong>Chưa có vị trí té ngã</strong>
+              <span>Vị trí sẽ xuất hiện khi backend trả về tọa độ GPS.</span>
+            </div>
+          </div>
+          <div class="map-footer">
+            <span id="location-caption">Đang chờ dữ liệu vị trí</span>
+            <a id="open-map-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Mở Google Maps <span aria-hidden="true">↗</span></a>
+          </div>
+        </section>
+
+        <footer class="page-footer">
+          <span>GaitWatch <span aria-hidden="true">·</span> Giám sát an toàn chuyển động</span>
+          <span id="last-updated">Chưa đồng bộ</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        const markerLayer = window.L ? window.L.layerGroup() : null;
+        let map;
+
+        function initializeMap() {
+          const container = document.getElementById("fall-map");
+          if (!container || !window.L) {
+            return;
+          }
+
+          map = window.L.map(container, {
+            scrollWheelZoom: false,
+            zoomControl: true,
+          }).setView([16, 106], 5);
+
+          window.L.tileLayer(
+            "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+            {
+              maxZoom: 19,
+              attribution:
+                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            }
+          ).addTo(map);
+          markerLayer.addTo(map);
+        }
+
+        function renderLocations(records) {
+          if (!map || !markerLayer) {
+            return;
+          }
+
+          markerLayer.clearLayers();
+          const points = [];
+          const fallRecords = records.filter(function (record) {
+            return record && record.event === "FALL_DETECTED";
+          });
+
+          records.forEach(function (record) {
+            const location = record && record.location;
+            if (
+              !location ||
+              !Number.isFinite(location.lat) ||
+              !Number.isFinite(location.lng)
+            ) {
+              return;
+            }
+            const point = [location.lat, location.lng];
+            points.push(point);
+            const occurredAt = record.timestamp_utc
+              ? new Date(record.timestamp_utc).toLocaleString("vi-VN")
+              : "Thời điểm không xác định";
+            window.L.marker(point)
+              .bindPopup("<strong>Phát hiện té ngã</strong><br>" + occurredAt)
+              .addTo(markerLayer);
+          });
+
+          const emptyState = document.getElementById("map-empty");
+          const caption = document.getElementById("location-caption");
+          const openMapLink = document.getElementById("open-map-link");
+          const status = document.getElementById("fall-status");
+          if (points.length === 0) {
+            emptyState.hidden = false;
+            openMapLink.hidden = true;
+            if (fallRecords.length > 0) {
+              const latestFall = fallRecords[fallRecords.length - 1];
+              emptyState.querySelector("strong").textContent =
+                "Đã phát hiện té ngã nhưng chưa có tọa độ";
+              emptyState.querySelector("span:last-child").textContent =
+                latestFall.location_error || "Backend chưa trả về vị trí.";
+              caption.textContent = "Không xác định được vị trí sự kiện gần nhất";
+              status.classList.add("alert");
+              status.innerHTML =
+                "<i></i> Có " + fallRecords.length + " sự kiện té ngã";
+            } else {
+              emptyState.querySelector("strong").textContent =
+                "Chưa có vị trí té ngã";
+              emptyState.querySelector("span:last-child").textContent =
+                "Vị trí sẽ xuất hiện khi backend trả về tọa độ GPS.";
+              caption.textContent = "Đang chờ dữ liệu vị trí";
+              status.classList.remove("alert");
+              status.innerHTML = "<i></i> Chưa có sự kiện";
+            }
+            return;
+          }
+
+          emptyState.hidden = true;
+          map.fitBounds(points, { padding: [30, 30], maxZoom: 16 });
+          const [lat, lng] = points[points.length - 1];
+          caption.textContent =
+            "Tọa độ gần nhất: " + lat.toFixed(5) + ", " + lng.toFixed(5);
+          openMapLink.href = "https://maps.google.com/?q=" + lat + "," + lng;
+          openMapLink.hidden = false;
+          status.classList.add("alert");
+          status.innerHTML =
+            "<i></i> Có " + fallRecords.length + " sự kiện té ngã";
+        }
+
+        window.GaitWatchMap = {
+          initialize: initializeMap,
+          renderLocations: renderLocations,
+        };
+      })();
+
+      (function () {
+        "use strict";
+
+        const HISTORY_URL = "http://localhost:8000/api/telemetry/history";
+        const POLL_INTERVAL_MS = 5000;
+        const numberFormat = new Intl.NumberFormat("vi-VN");
+        let stepsChart;
+        let gaitChart;
+        let polling = false;
+
+        function formatMetric(value, digits) {
+          if (
+            value === null ||
+            value === undefined ||
+            !Number.isFinite(Number(value))
+          ) {
+            return "—";
+          }
+          return new Intl.NumberFormat("vi-VN", {
+            maximumFractionDigits: digits,
+          }).format(Number(value));
+        }
+
+        function toDateLabel(record) {
+          if (!record.timestamp_utc) {
+            return "Không rõ";
+          }
+          const date = new Date(record.timestamp_utc);
+          return Number.isNaN(date.getTime())
+            ? "Không rõ"
+            : date.toLocaleTimeString("vi-VN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+        }
+
+        function hasGaitData(record) {
+          const gait = record.gait || {};
+          return [
+            gait.cadence_steps_per_minute,
+            gait.mean_step_interval_ms,
+            gait.variability_cv_percent,
+          ].some(function (value) {
+            return (
+              value !== null &&
+              value !== undefined &&
+              Number.isFinite(Number(value))
+            );
+          });
+        }
+
+        function setConnectionState(state, message) {
+          const dot = document.getElementById("connection-dot");
+          dot.classList.toggle("connected", state === "connected");
+          dot.classList.toggle("error", state === "error");
+          document.getElementById("connection-label").textContent = message;
+        }
+
+        function updateStats(records) {
+          const latest = records.length ? records[records.length - 1] : null;
+          const gait = latest ? latest.gait || {} : {};
+          document.getElementById("steps-value").textContent = latest
+            ? numberFormat.format(latest.steps)
+            : "—";
+          document.getElementById("cadence-value").textContent = formatMetric(
+            gait.cadence_steps_per_minute,
+            1
+          );
+          document.getElementById("interval-value").textContent = formatMetric(
+            gait.mean_step_interval_ms,
+            0
+          );
+          document.getElementById("variability-value").textContent =
+            formatMetric(gait.variability_cv_percent, 1);
+          document.getElementById("current-date").textContent =
+            new Date().toLocaleDateString("vi-VN", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            });
+        }
+
+        function renderTelemetry(records) {
+          const ordered = records.slice().sort(function (left, right) {
+            return (
+              new Date(left.timestamp_utc || 0) -
+              new Date(right.timestamp_utc || 0)
+            );
+          });
+          updateStats(ordered);
+
+          stepsChart.data.labels = ordered.map(toDateLabel);
+          stepsChart.data.datasets[0].data = ordered.map(function (record) {
+            return Number(record.steps) || 0;
+          });
+          stepsChart.update("none");
+          document.getElementById("steps-empty").hidden = ordered.length > 0;
+
+          const measured = ordered.filter(hasGaitData);
+          gaitChart.data.labels = measured.map(toDateLabel);
+          gaitChart.data.datasets[0].data = measured.map(function (record) {
+            return record.gait.cadence_steps_per_minute ?? null;
+          });
+          gaitChart.data.datasets[1].data = measured.map(function (record) {
+            return record.gait.mean_step_interval_ms ?? null;
+          });
+          gaitChart.data.datasets[2].data = measured.map(function (record) {
+            return record.gait.variability_cv_percent ?? null;
+          });
+          gaitChart.update("none");
+          document.getElementById("gait-empty").hidden = measured.length > 0;
+          window.GaitWatchMap.renderLocations(ordered);
+        }
+
+        async function loadTelemetry() {
+          if (polling) {
+            return;
+          }
+          polling = true;
+          try {
+            const response = await fetch(HISTORY_URL, {
+              headers: { Accept: "application/json" },
+              cache: "no-store",
+            });
+            if (!response.ok) {
+              throw new Error("Backend trả về HTTP " + response.status);
+            }
+            const records = await response.json();
+            if (!Array.isArray(records)) {
+              throw new Error("Phản hồi lịch sử telemetry không hợp lệ.");
+            }
+            renderTelemetry(records);
+            setConnectionState("connected", "Đã kết nối · cập nhật mỗi 5 giây");
+            document.getElementById("last-updated").textContent =
+              "Cập nhật lúc " +
+              new Date().toLocaleTimeString("vi-VN", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              });
+          } catch (error) {
+            setConnectionState(
+              "error",
+              error.message || "Không thể kết nối backend"
+            );
+          } finally {
+            polling = false;
+          }
+        }
+
+        function createCharts() {
+          if (!window.Chart) {
+            setConnectionState("error", "Không tải được thư viện Chart.js");
+            return false;
+          }
+
+          const commonOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { intersect: false, mode: "index" },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: "#202b3d",
+                padding: 10,
+                titleFont: { family: "DM Sans", size: 10 },
+                bodyFont: { family: "DM Sans", size: 10 },
+              },
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                border: { display: false },
+                ticks: {
+                  color: "#9aa5b5",
+                  font: { family: "DM Sans", size: 9 },
+                  maxTicksLimit: 7,
+                },
+              },
+              y: {
+                beginAtZero: true,
+                border: { display: false, dash: [3, 4] },
+                grid: { color: "#edf0f5", drawTicks: false },
+                ticks: {
+                  color: "#9aa5b5",
+                  font: { family: "DM Sans", size: 9 },
+                  maxTicksLimit: 5,
+                },
+              },
+            },
+          };
+
+          stepsChart = new Chart(document.getElementById("steps-chart"), {
+            type: "line",
+            data: {
+              labels: [],
+              datasets: [
+                {
+                  label: "Tổng số bước",
+                  data: [],
+                  borderColor: "#5278f4",
+                  backgroundColor: "rgba(82, 120, 244, 0.11)",
+                  borderWidth: 2,
+                  fill: true,
+                  tension: 0.35,
+                  pointRadius: 2,
+                  pointHoverRadius: 4,
+                  pointBackgroundColor: "#fff",
+                  pointBorderWidth: 2,
+                },
+              ],
+            },
+            options: commonOptions,
+          });
+
+          gaitChart = new Chart(document.getElementById("gait-chart"), {
+            type: "line",
+            data: {
+              labels: [],
+              datasets: [
+                {
+                  label: "Cadence (bước/phút)",
+                  data: [],
+                  borderColor: "#2daf87",
+                  backgroundColor: "#2daf87",
+                  yAxisID: "y",
+                  borderWidth: 2,
+                  tension: 0.35,
+                  pointRadius: 2,
+                },
+                {
+                  label: "Khoảng bước (ms)",
+                  data: [],
+                  borderColor: "#e9a23b",
+                  backgroundColor: "#e9a23b",
+                  yAxisID: "y1",
+                  borderWidth: 2,
+                  tension: 0.35,
+                  pointRadius: 2,
+                },
+                {
+                  label: "Biến thiên CV (%)",
+                  data: [],
+                  borderColor: "#9670e8",
+                  backgroundColor: "#9670e8",
+                  yAxisID: "y2",
+                  borderWidth: 2,
+                  tension: 0.35,
+                  pointRadius: 2,
+                },
+              ],
+            },
+            options: {
+              ...commonOptions,
+              scales: {
+                ...commonOptions.scales,
+                y: { ...commonOptions.scales.y, position: "left" },
+                y1: {
+                  ...commonOptions.scales.y,
+                  position: "right",
+                  grid: { drawOnChartArea: false },
+                },
+                y2: {
+                  display: false,
+                  beginAtZero: true,
+                  position: "right",
+                },
+              },
+            },
+          });
+          return true;
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+          if (window.GaitWatchMap) {
+            window.GaitWatchMap.initialize();
+          }
+          if (!createCharts()) {
+            return;
+          }
+          loadTelemetry();
+          window.setInterval(loadTelemetry, POLL_INTERVAL_MS);
+        });
+      })();
+    </script>
+  </body>
+</html>

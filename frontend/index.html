@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Giám Sát Dáng Đi & Té Ngã</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        :root { 
+            --primary: #2563eb; 
+            --bg: #f8fafc; 
+            --card: #ffffff; 
+            --text: #1e293b; 
+        }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: var(--bg); 
+            color: var(--text); 
+            margin: 0; 
+            padding: 20px; 
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { font-size: 24px; margin-bottom: 20px; color: #0f172a; }
+        .metrics-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
+            gap: 15px; 
+            margin-bottom: 25px; 
+        }
+        .card { 
+            background: var(--card); 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
+            border: 1px solid #e2e8f0;
+        }
+        .card h3 { margin: 0 0 10px 0; font-size: 14px; color: #64748b; }
+        .card p { margin: 0; font-size: 26px; font-weight: bold; color: var(--primary); }
+        .map-container {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+        }
+        .map-container h3 { margin-top: 0; margin-bottom: 15px; color: #334155; }
+        #map { height: 400px; width: 100%; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard Theo Dõi Vận Động & Dáng Đi</h1>
+        
+        <div class="metrics-grid">
+            <div class="card">
+                <h3>Số bước chân</h3>
+                <p id="step-count">0</p>
+            </div>
+            <div class="card">
+                <h3>Nhịp bước (Cadence)</h3>
+                <p id="cadence">-- bước/phút</p>
+            </div>
+            <div class="card">
+                <h3>Độ biến thiên (CV)</h3>
+                <p id="cv">-- %</p>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <h3>Bản Đồ Vị Trí Té Ngã (Wi-Fi Geolocation)</h3>
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Khởi tạo bản đồ với nguồn Esri World Street Map (Miễn phí 100%, không cần API Key)
+        const map = L.map('map').setView([10.762622, 106.682289], 15);
+        
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri'
+        }).addTo(map);
+
+        let fallMarker = null;
+
+        async function fetchTelemetryData() {
+            try {
+                // Thử lấy dữ liệu từ endpoint lịch sử hoặc endpoint telemetry chính
+                let response = await fetch('http://localhost:8000/api/telemetry/history');
+                if (!response.ok) {
+                    response = await fetch('http://localhost:8000/api/telemetry');
+                }
+                if (!response.ok) return;
+                
+                const data = await response.json();
+                const latest = Array.isArray(data) ? data[data.length - 1] : data;
+                
+                if (latest) {
+                    document.getElementById('step-count').innerText = latest.step_count || 0;
+                    if (latest.cadence) document.getElementById('cadence').innerText = latest.cadence + ' bước/phút';
+                    if (latest.cv) document.getElementById('cv').innerText = latest.cv + ' %';
+                    
+                    if (latest.latitude && latest.longitude) {
+                        const pos = [latest.latitude, latest.longitude];
+                        if (!fallMarker) {
+                            fallMarker = L.marker(pos).addTo(map)
+                                .bindPopup("<b>CẢNH BÁO TÉ NGÃ!</b><br>Vị trí người dùng.")
+                                .openPopup();
+                        } else {
+                            fallMarker.setLatLng(pos);
+                        }
+                        map.setView(pos, 16);
+                    }
+                }
+            } catch (err) {
+                console.log('Đang chờ kết nối Backend...');
+            }
+        }
+
+        setInterval(fetchTelemetryData, 3000);
+        fetchTelemetryData();
+    </script>
+</body>
+</html>
