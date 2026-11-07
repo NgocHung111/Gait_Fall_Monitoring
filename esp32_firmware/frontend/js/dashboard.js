@@ -133,6 +133,13 @@
 
   function getApiUrl() {
     const input = document.getElementById("api-url");
+    const isLocalDevelopment =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    if (!isLocalDevelopment) {
+      return window.location.origin;
+    }
+
     const saved = localStorage.getItem("gaitwatch-api-url");
     const url = (saved || input.value || DEFAULT_API_URL).trim();
     return url.replace(/\/+$/, "");
