@@ -89,3 +89,7 @@ def receive_telemetry(telemetry: Telemetry) -> TelemetryResponse:
         location=location,
         telegram_sent=telegram_sent,
     )
+
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "Gait and Fall Monitoring System is Running"}

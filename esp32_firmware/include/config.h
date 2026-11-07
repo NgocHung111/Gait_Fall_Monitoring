@@ -1,19 +1,19 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// Thay các giá trị mẫu bằng thông tin mạng và địa chỉ backend của bạn.
-#define WIFI_SSID "Hung Dung"
-#define WIFI_PASS "75782005"
-#define SERVER_URL "192.168.1.125"
+#include "secrets.h"
 
-// Phần cứng ESP32-C3 SuperMini và LSM6DS3.
+// Replace this with the Render service URL assigned during deployment.
+#define SERVER_URL "https://gait-fall-monitoring.onrender.com"
+
+// ESP32-C3 SuperMini and LSM6DS3 hardware.
 #define SDA_PIN 8
 #define SCL_PIN 9
 #define LSM6DS3_I2C_ADDRESS 0x6B
 #define BUZZER_PIN 5
 #define BUTTON_PIN 4
 
-// Chu kỳ xử lý và ngưỡng thuật toán (gia tốc tính theo g, gyro theo dps).
+// Processing intervals and thresholds (acceleration in g, gyroscope in dps).
 #define STEP_DYNAMIC_THRESHOLD 0.18f
 #define STEP_BASELINE_ALPHA 0.05f
 #define MIN_STEP_INTERVAL 300UL

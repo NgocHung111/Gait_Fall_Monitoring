@@ -21,6 +21,7 @@ public:
     IMUData readData();
 
 private:
+    uint8_t i2cAddress = 0;
     bool readRegister(uint8_t reg, uint8_t& value);
     bool writeRegister(uint8_t reg, uint8_t value);
 };

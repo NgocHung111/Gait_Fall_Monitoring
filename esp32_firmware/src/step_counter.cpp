@@ -1,5 +1,5 @@
-#include "step_counter.h"
 #include "config.h"
+#include "step_counter.h"
 
 bool StepCounter::processSample(const IMUData& data, unsigned long currentTime) {
     if (!data.valid) {

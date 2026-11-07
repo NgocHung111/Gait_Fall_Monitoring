@@ -1,6 +1,13 @@
+#include "config.h"
 #include "wifi_tracker.h"
 
 bool WiFiTracker::scanNetworks(JsonObject destination) {
+    const wl_status_t status = WiFi.status();
+    if (status != WL_CONNECTED) {
+        WiFi.disconnect(false);
+        delay(50);
+    }
+
     const int networkCount = WiFi.scanNetworks(false, true);
     JsonArray wifiArray = destination["wifiAccessPoints"].to<JsonArray>();
 

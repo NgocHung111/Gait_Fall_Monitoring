@@ -3,7 +3,10 @@
 
   const POLL_INTERVAL_MS = 5000;
   const HISTORY_LIMIT = 250;
-  const DEFAULT_API_URL = "http://localhost:8000";
+  const DEFAULT_API_URL =
+    window.location.port === "5500"
+      ? "http://localhost:8000"
+      : window.location.origin;
   const numberFormat = new Intl.NumberFormat("vi-VN");
   let stepsChart;
   let gaitChart;
