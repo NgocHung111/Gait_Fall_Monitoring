@@ -91,9 +91,9 @@
         async function fetchTelemetryData() {
             try {
                 // Thử lấy dữ liệu từ endpoint lịch sử hoặc endpoint telemetry chính
-                let response = await fetch('http://localhost:8000/api/telemetry/history');
+                let response = await fetch('/api/telemetry/history');
                 if (!response.ok) {
-                    response = await fetch('http://localhost:8000/api/telemetry');
+                    response = await fetch('/api/telemetry');
                 }
                 if (!response.ok) return;
                 
