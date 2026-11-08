@@ -14,6 +14,6 @@ The backend returns up to 250 recent telemetry records. The ESP32 sends a
 `STEP_UPDATE` when its step count has changed, at most once every 10 seconds,
 and sends a separate `FALL_DETECTED` record when a fall alert is not canceled.
 It does not upload continuous IMU samples. Step updates include recent step
-intervals, which the backend uses for cadence and gait variability. Leaflet,
-OpenStreetMap tiles, Chart.js, and web fonts are loaded from external CDNs and
-require an internet connection.
+intervals (up to the latest 10), which the backend uses for cadence and gait
+variability. Leaflet, OpenStreetMap tiles, Chart.js, and web fonts are loaded
+from external CDNs and require an internet connection.

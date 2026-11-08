@@ -65,7 +65,8 @@ access control for the people who should see it.
 The firmware posts a step-count update every 10 seconds while the count has
 changed, as well as a separate record when a fall alert is not canceled. It
 does not upload continuous IMU samples. Step updates include recent step
-intervals so the backend can calculate cadence and gait variability.
+intervals (up to the latest 10) so the backend can calculate cadence and gait
+variability.
 PostgreSQL preserves these telemetry records, not a full daily activity history.
 
 The backend serves the frontend on the same origin in production, avoiding a
