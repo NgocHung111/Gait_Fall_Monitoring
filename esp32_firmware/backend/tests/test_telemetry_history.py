@@ -35,6 +35,24 @@ class TelemetryHistoryTests(unittest.TestCase):
         self.assertEqual(history[0].gait.cadence_steps_per_minute, 60.0)
         self.assertIsNotNone(history[0].timestamp_utc)
 
+    def test_step_update_is_stored_without_sending_telegram(self) -> None:
+        response = receive_telemetry(
+            Telemetry(
+                event="STEP_UPDATE",
+                steps=47,
+                step_intervals_ms=[900, 1000],
+            )
+        )
+
+        history = get_telemetry_history(limit=1)
+        self.assertEqual(response.event, "STEP_UPDATE")
+        self.assertEqual(response.steps, 47)
+        self.assertFalse(response.telegram_sent)
+        self.assertAlmostEqual(
+            response.gait.cadence_steps_per_minute, 60.0 / 0.95
+        )
+        self.assertEqual(history[0].event, "STEP_UPDATE")
+
     def test_rejects_out_of_range_history_limit(self) -> None:
         with self.assertRaises(HTTPException):
             get_telemetry_history(limit=251)
