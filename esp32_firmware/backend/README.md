@@ -47,11 +47,12 @@ when the service is created, and it may differ if that name is unavailable.
 4. Put the exact HTTPS Render URL (without a trailing slash) in
    `esp32_firmware/include/config.h` as `SERVER_URL`, then rebuild and upload
    the firmware. The URL is public configuration, not a credential.
-5. To use it away from home, copy
-   `esp32_firmware/include/secrets.example.h` to the ignored local file
-   `esp32_firmware/include/secrets.h` and put the phone hotspot SSID/password
-   there. The ESP32-C3 requires 2.4 GHz hotspot support. Reflash if the hotspot
-   credentials change.
+5. The ESP32-C3 requires a 2.4 GHz hotspot or Wi-Fi network. If it cannot
+   connect to its saved network for 30 seconds, it opens a local setup
+   network named `GaitWatch-Setup`. Read the temporary setup password in the
+   Serial Monitor, connect a phone to that network, then open
+   `http://192.168.4.1`. Select the nearby Wi-Fi, enter its password, and save;
+   the ESP32 stores the credentials and reconnects without reflashing.
 
 Render's free web service spins down after 15 minutes without requests, so its
 first request after idle can take about a minute. Free services have usage

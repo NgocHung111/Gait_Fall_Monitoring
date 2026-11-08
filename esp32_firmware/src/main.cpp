@@ -9,16 +9,19 @@
 #include "step_counter.h"
 #include "fall_detection.h"
 #include "wifi_tracker.h"
+#include "wifi_setup_portal.h"
 
 IMUSensor imu;
 StepCounter stepCounter;
 FallDetector fallDetector;
 WiFiTracker wifiTracker;
+WiFiSetupPortal wifiSetupPortal;
 
 bool isAlerting = false;
 unsigned long alertStartTime = 0;
 unsigned long lastWiFiAttempt = 0;
 unsigned long lastSensorLogTime = 0;
+unsigned long wifiConnectionStartedAt = 0;
 bool imuInitialized = false;
 volatile bool wifiRetryPending = false;
 volatile bool wifiDisconnectedEventPending = false;
@@ -53,15 +56,15 @@ void setup() {
         Serial.println("IMU initialized.");
     }
 
-    WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false);
     WiFi.onEvent(onWiFiEvent);
-    if (strcmp(WIFI_SSID, "YOUR_WIFI_NAME") != 0 && strlen(WIFI_SSID) > 0) {
+    if (wifiSetupPortal.begin(WIFI_SSID, WIFI_PASS)) {
         Serial.println("Connecting to Wi-Fi. ESP32-C3 requires a 2.4 GHz network.");
-        WiFi.begin(WIFI_SSID, WIFI_PASS);
         lastWiFiAttempt = millis();
+        wifiConnectionStartedAt = lastWiFiAttempt;
     } else {
-        Serial.println("Wi-Fi credentials are placeholders; configure them in config.h.");
+        Serial.println("No saved Wi-Fi network; starting the setup page.");
+        wifiSetupPortal.startPortal();
     }
 }
 
@@ -167,20 +170,34 @@ void loop() {
 
     if (wifiGotIpEventPending) {
         wifiGotIpEventPending = false;
+        wifiConnectionStartedAt = now;
+        wifiSetupPortal.stopPortal();
         Serial.print("Wi-Fi connected. IP address: ");
         Serial.println(WiFi.localIP());
     }
 
+    if (wifiSetupPortal.handleClient()) {
+        lastWiFiAttempt = now;
+        wifiConnectionStartedAt = now;
+        wifiRetryPending = false;
+    }
+
     if (wifiRetryPending &&
-        strcmp(WIFI_SSID, "YOUR_WIFI_NAME") != 0 &&
+        WiFi.status() != WL_CONNECTED &&
         now - lastWiFiAttempt >= WIFI_RETRY_INTERVAL_MS) {
         wifiRetryPending = false;
         Serial.println("Retrying Wi-Fi connection...");
         if (!WiFi.reconnect()) {
             Serial.println("Wi-Fi reconnect request failed; restarting with configured credentials.");
-            WiFi.begin(WIFI_SSID, WIFI_PASS);
+            wifiSetupPortal.connect();
         }
         lastWiFiAttempt = now;
+    }
+
+    if (WiFi.status() != WL_CONNECTED &&
+        !wifiSetupPortal.isPortalActive() &&
+        now - wifiConnectionStartedAt >= WIFI_SETUP_TIMEOUT_MS) {
+        wifiSetupPortal.startPortal();
     }
 
     IMUData data = imu.readData();
