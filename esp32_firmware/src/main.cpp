@@ -32,7 +32,6 @@ unsigned long alertStartTime = 0;
 unsigned long lastWiFiAttempt = 0;
 unsigned long lastSensorLogTime = 0;
 unsigned long wifiConnectionStartedAt = 0;
-unsigned long lastTelemetryAttempt = 0;
 uint32_t lastReportedStepCount = 0;
 bool imuInitialized = false;
 volatile bool wifiRetryPending = false;
@@ -80,8 +79,6 @@ void setup() {
         Serial.println("No saved Wi-Fi network; starting the setup page.");
         wifiSetupPortal.startPortal();
     }
-    lastTelemetryAttempt = millis();
-
     stepTelemetryQueue = xQueueCreate(1, sizeof(StepTelemetrySnapshot));
     if (stepTelemetryQueue == nullptr) {
         Serial.println("ERROR: Could not create the step telemetry queue.");
@@ -278,7 +275,7 @@ void loop() {
 
     IMUData data = imu.readData();
 
-    stepCounter.processSample(data, now);
+    const bool stepDetected = stepCounter.processSample(data, now);
 
     if (now - lastSensorLogTime >= 1000) {
         lastSensorLogTime = now;
@@ -326,8 +323,7 @@ void loop() {
         }
     }
 
-    if (!isAlerting &&
-        now - lastTelemetryAttempt >= TELEMETRY_INTERVAL_MS &&
+    if (stepDetected && WiFi.status() == WL_CONNECTED &&
         stepCounter.getStepCount() > lastReportedStepCount) {
         if (stepTelemetryQueue == nullptr) {
             Serial.println("ERROR: Step update skipped because the telemetry task is unavailable.");
@@ -338,7 +334,6 @@ void loop() {
                 stepCounter.getRecentStepIntervals(snapshot.intervals, 10);
             if (xQueueOverwrite(stepTelemetryQueue, &snapshot) == pdPASS) {
                 lastReportedStepCount = snapshot.steps;
-                lastTelemetryAttempt = now;
             } else {
                 Serial.println("ERROR: Could not queue the step telemetry update.");
             }

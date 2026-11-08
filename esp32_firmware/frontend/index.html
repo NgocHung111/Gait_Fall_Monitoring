@@ -448,6 +448,50 @@
       }
       .map-footer a { color: #5278f4; font-weight: 600; text-decoration: none; }
       .map-footer a:hover { text-decoration: underline; }
+      .phone-location-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px 14px;
+        align-items: end;
+        margin: 14px 0;
+        padding: 12px;
+        border: 1px solid #e8edf5;
+        border-radius: 8px;
+        background: #f8faff;
+      }
+      .phone-location-copy { color: #78869c; font-size: 10px; line-height: 1.5; }
+      .phone-location-copy strong { display: block; margin-bottom: 2px; color: #3c4b64; font-size: 11px; }
+      .phone-location-form { display: flex; flex-wrap: wrap; gap: 7px; }
+      .phone-location-form input {
+        min-width: 180px;
+        padding: 8px 9px;
+        border: 1px solid #dfe5ef;
+        border-radius: 6px;
+        color: #34425a;
+        background: white;
+        font: inherit;
+        font-size: 10px;
+      }
+      .phone-location-form button {
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 6px;
+        color: white;
+        background: #5278f4;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .phone-location-form button.secondary { color: #5e6b80; background: #e9edf4; }
+      .phone-location-form button:disabled { opacity: .55; cursor: default; }
+      #phone-location-status {
+        grid-column: 1 / -1;
+        min-height: 12px;
+        margin: 0;
+        color: #78869c;
+        font-size: 9px;
+      }
+      #phone-location-status.error { color: #c35454; }
       .page-footer {
         display: flex;
         justify-content: space-between;
@@ -502,6 +546,8 @@
         .gait-legend { gap: 8px; font-size: 8px; }
         .map-frame { height: 205px; }
         .map-heading { align-items: flex-start; flex-direction: column; }
+        .phone-location-panel { grid-template-columns: 1fr; }
+        .phone-location-form input { flex: 1 1 100%; }
         .page-footer { font-size: 8px; }
       }
     </style>
@@ -663,7 +709,7 @@
             <div>
               <p class="eyebrow">AN TOÀN</p>
               <h2>Định vị sự kiện té ngã</h2>
-              <p class="panel-subtitle">Vị trí được xác định từ các điểm truy cập Wi-Fi gửi bởi ESP32.</p>
+              <p class="panel-subtitle">Có thể dùng vị trí GPS từ điện thoại đang đi cùng người đeo thiết bị.</p>
             </div>
             <span class="event-badge" id="fall-status"><i></i> Chưa có sự kiện</span>
           </div>
@@ -674,6 +720,18 @@
               <strong>Chưa có vị trí té ngã</strong>
               <span>Vị trí sẽ xuất hiện khi backend trả về tọa độ GPS.</span>
             </div>
+          </div>
+          <div class="phone-location-panel">
+            <div class="phone-location-copy">
+              <strong>Dùng GPS miễn phí trên điện thoại</strong>
+              Mở trang này trên điện thoại, bật chia sẻ vị trí và giữ trang hoạt động. Điện thoại cần đi cùng người đeo thiết bị.
+            </div>
+            <div class="phone-location-form">
+              <input id="phone-location-token" type="password" autocomplete="off" aria-label="Mã chia sẻ vị trí" placeholder="Mã chia sẻ vị trí">
+              <button id="phone-location-start" type="button">Bật vị trí</button>
+              <button id="phone-location-stop" class="secondary" type="button" disabled>Tắt</button>
+            </div>
+            <p id="phone-location-status" role="status" aria-live="polite">Chưa bật chia sẻ vị trí.</p>
           </div>
           <div class="map-footer">
             <span id="location-caption">Đang chờ dữ liệu vị trí</span>
@@ -709,11 +767,11 @@
           }).setView([16, 106], 5);
 
           window.L.tileLayer(
-            "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
             {
               maxZoom: 19,
               attribution:
-                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             }
           ).addTo(map);
           markerLayer.addTo(map);
@@ -744,8 +802,23 @@
             const occurredAt = record.timestamp_utc
               ? new Date(record.timestamp_utc).toLocaleString("vi-VN")
               : "Thời điểm không xác định";
+            const sourceLabel =
+              record.location_source === "phone"
+                ? "GPS điện thoại"
+                : record.location_source === "wifi"
+                  ? "Định vị Wi-Fi"
+                  : "Vị trí";
+            const ageLabel = Number.isFinite(record.location_age_seconds)
+              ? "<br>Cập nhật trước " + record.location_age_seconds + " giây"
+              : "";
             window.L.marker(point)
-              .bindPopup("<strong>Phát hiện té ngã</strong><br>" + occurredAt)
+              .bindPopup(
+                "<strong>Phát hiện té ngã</strong><br>" +
+                  occurredAt +
+                  "<br>" +
+                  sourceLabel +
+                  ageLabel
+              )
               .addTo(markerLayer);
           });
 
@@ -770,7 +843,7 @@
               emptyState.querySelector("strong").textContent =
                 "Chưa có vị trí té ngã";
               emptyState.querySelector("span:last-child").textContent =
-                "Vị trí sẽ xuất hiện khi backend trả về tọa độ GPS.";
+                "Vị trí sẽ xuất hiện khi điện thoại chia sẻ GPS hoặc backend xác định được tọa độ.";
               caption.textContent = "Đang chờ dữ liệu vị trí";
               status.classList.remove("alert");
               status.innerHTML = "<i></i> Chưa có sự kiện";
@@ -797,6 +870,132 @@
       })();
 
       (function () {
+          "use strict";
+
+          const UPDATE_INTERVAL_MS = 15000;
+          let updateTimer;
+          let requestPending = false;
+          let tracking = false;
+
+          function setStatus(message, isError) {
+            const status = document.getElementById("phone-location-status");
+            status.textContent = message;
+            status.classList.toggle("error", Boolean(isError));
+          }
+
+          async function sendLocation(position, token) {
+            try {
+              const response = await fetch("/api/phone-location", {
+                method: "POST",
+                headers: {
+                  Accept: "application/json",
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + token,
+                },
+                body: JSON.stringify({
+                  lat: position.coords.latitude,
+                  lng: position.coords.longitude,
+                  accuracy_m: position.coords.accuracy,
+                  timestamp_utc: new Date(position.timestamp).toISOString(),
+                }),
+              });
+              if (!tracking) {
+                return;
+              }
+              const result = await response.json();
+              if (!response.ok) {
+                throw new Error(result.detail || "Không thể gửi vị trí.");
+              }
+              const accuracy = Number.isFinite(position.coords.accuracy)
+                ? " · sai số khoảng " + Math.round(position.coords.accuracy) + " m"
+                : "";
+              setStatus(
+                "Đang chia sẻ vị trí · cập nhật " +
+                  new Date().toLocaleTimeString("vi-VN") +
+                  accuracy,
+                false
+              );
+            } catch (error) {
+              if (tracking) {
+                setStatus(error.message || "Không thể gửi vị trí lên máy chủ.", true);
+              }
+            } finally {
+              requestPending = false;
+            }
+          }
+
+          function requestLocation(token) {
+            if (requestPending) {
+              return;
+            }
+            requestPending = true;
+            navigator.geolocation.getCurrentPosition(
+              function (position) {
+                if (!tracking) {
+                  requestPending = false;
+                  return;
+                }
+                sendLocation(position, token);
+              },
+              function (error) {
+                requestPending = false;
+                if (!tracking) {
+                  return;
+                }
+                const messages = {
+                  1: "Bạn chưa cấp quyền truy cập vị trí cho trình duyệt.",
+                  2: "Điện thoại chưa xác định được vị trí. Hãy bật GPS và thử lại.",
+                  3: "Lấy vị trí quá thời gian chờ. Đang thử lại.",
+                };
+                setStatus(messages[error.code] || "Không lấy được vị trí điện thoại.", true);
+              },
+              { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+            );
+          }
+
+          function initialize() {
+            const tokenInput = document.getElementById("phone-location-token");
+            const startButton = document.getElementById("phone-location-start");
+            const stopButton = document.getElementById("phone-location-stop");
+            tokenInput.value = sessionStorage.getItem("gaitwatch-phone-location-token") || "";
+
+            startButton.addEventListener("click", function () {
+              const token = tokenInput.value.trim();
+              if (!token) {
+                setStatus("Nhập mã chia sẻ vị trí do quản trị viên cấu hình trên Render.", true);
+                return;
+              }
+              if (!navigator.geolocation) {
+                setStatus("Trình duyệt này không hỗ trợ định vị.", true);
+                return;
+              }
+              sessionStorage.setItem("gaitwatch-phone-location-token", token);
+              tracking = true;
+              startButton.disabled = true;
+              stopButton.disabled = false;
+              setStatus("Đang yêu cầu quyền truy cập vị trí...", false);
+              requestLocation(token);
+              updateTimer = window.setInterval(function () {
+                requestLocation(token);
+              }, UPDATE_INTERVAL_MS);
+            });
+
+            stopButton.addEventListener("click", function () {
+              tracking = false;
+              window.clearInterval(updateTimer);
+              updateTimer = undefined;
+              requestPending = false;
+              startButton.disabled = false;
+              stopButton.disabled = true;
+              sessionStorage.removeItem("gaitwatch-phone-location-token");
+              setStatus("Đã tắt chia sẻ. Vị trí cũ sẽ không được dùng cho té ngã sau 2 phút.", false);
+            });
+          }
+
+          window.GaitWatchPhoneLocation = { initialize: initialize };
+        })();
+
+        (function () {
         "use strict";
 
         const HISTORY_URL = "/api/telemetry/history";
@@ -1074,6 +1273,7 @@
           if (window.GaitWatchMap) {
             window.GaitWatchMap.initialize();
           }
+          window.GaitWatchPhoneLocation.initialize();
           if (!createCharts()) {
             return;
           }

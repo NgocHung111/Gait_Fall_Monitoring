@@ -14,7 +14,7 @@ python -m http.server 5500 --directory ..\frontend
 ```
 
 Open `http://localhost:5500`. The dashboard uses `http://localhost:8000` as its
-local API and polls telemetry history every five seconds.
+local API and polls telemetry history every second.
 
 Set these environment variables before starting the backend when using the
 corresponding integrations:
@@ -22,6 +22,7 @@ corresponding integrations:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 - `GOOGLE_GEOLOCATION_API_KEY`
+- `PHONE_LOCATION_TOKEN` (optional bearer token for phone GPS updates)
 - `DATABASE_URL` (PostgreSQL connection URL; without it, history is in memory)
 
 `.env.example` lists the variable names only. Do not commit a real `.env` file
@@ -39,8 +40,9 @@ when the service is created, and it may differ if that name is unavailable.
    PostgreSQL project. Copy its pooled or direct connection URL from Neon.
 2. In Render, create a Blueprint from the GitHub repository and select the
    free plan. Set `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and
-   `GOOGLE_GEOLOCATION_API_KEY` as Render environment variables. Leave optional
-   integrations empty only if you do not need them.
+   a randomly generated `PHONE_LOCATION_TOKEN` as Render environment variables.
+   `GOOGLE_GEOLOCATION_API_KEY` is optional when using phone GPS instead of
+   Wi-Fi geolocation.
 3. Wait for the Render deploy to finish. Check
    `https://<your-render-host>/api/health`; it should report
    `"storage":"postgres"`. Open `https://<your-render-host>/` for the dashboard.
@@ -66,11 +68,32 @@ regularly. The dashboard and history endpoint are publicly reachable at the
 Render URL: do not send real health/location data until you have added suitable
 access control for the people who should see it.
 
-The firmware posts a step-count update every 10 seconds while the count has
-changed, as well as a separate record when a fall alert is not canceled. It
-does not upload continuous IMU samples. Step updates include recent step
-intervals (up to the latest 10) so the backend can calculate cadence and gait
-variability.
+### Free phone GPS for fall locations
+
+The phone can share its built-in GPS without a Google billing account or an
+additional GPS module. Generate a long random token (for example,
+`python -c "import secrets; print(secrets.token_urlsafe(32))"`), set it as
+`PHONE_LOCATION_TOKEN` in Render, and redeploy. On the dashboard opened on the
+phone, enter that same token and select **Bật vị trí**. Allow location access.
+The phone posts its coordinates every 15 seconds over HTTPS; the backend uses
+the latest fix only if it is at most two minutes old when a fall arrives.
+Recent phone GPS is preferred over Wi-Fi geolocation. If no fresh phone fix is
+available, the backend can still use Google Wi-Fi geolocation when configured.
+
+Keep the page open and the phone with the person wearing the device. Mobile
+browsers may pause location updates when the page is backgrounded or closed,
+and location is unavailable if the phone has no network connection. Stop
+sharing when it is not needed. The phone-location token protects location
+uploads, but this project does not yet authenticate dashboard/history access;
+do not use it for sensitive real-world health monitoring without adding access
+control. The map uses OpenStreetMap tiles with attribution and is subject to
+the public tile service's usage policy.
+
+The firmware queues a step-count update as soon as it detects a new step, as
+well as a separate record when a fall alert is not canceled. Network posting
+runs in a separate task, and the firmware does not upload continuous IMU
+samples. Step updates include recent step intervals (up to the latest 10) so
+the backend can calculate cadence and gait variability.
 PostgreSQL preserves these telemetry records, not a full daily activity history.
 
 The backend serves the frontend on the same origin in production, avoiding a

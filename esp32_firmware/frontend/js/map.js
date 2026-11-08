@@ -17,11 +17,11 @@
     }).setView([16.0, 106.0], 5);
 
     window.L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
       {
         maxZoom: 19,
         attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }
     ).addTo(map);
     markerLayer.addTo(map);
@@ -48,8 +48,19 @@
       const occurredAt = record.timestamp_utc
         ? new Date(record.timestamp_utc).toLocaleString("vi-VN")
         : "Thời điểm không xác định";
+      const sourceLabel =
+        record.location_source === "phone"
+          ? "GPS điện thoại"
+          : record.location_source === "wifi"
+            ? "Định vị Wi-Fi"
+            : "Vị trí";
       window.L.marker(point)
-        .bindPopup("<strong>Phát hiện té ngã</strong><br>" + occurredAt)
+        .bindPopup(
+          "<strong>Phát hiện té ngã</strong><br>" +
+            occurredAt +
+            "<br>" +
+            sourceLabel
+        )
         .addTo(markerLayer);
     });
 
@@ -73,7 +84,7 @@
       } else {
         emptyState.querySelector("strong").textContent = "Chưa có vị trí té ngã";
         emptyState.querySelector("span:last-child").textContent =
-          "Vị trí sẽ xuất hiện khi backend trả về tọa độ GPS.";
+          "Vị trí sẽ xuất hiện khi điện thoại chia sẻ GPS hoặc backend xác định được tọa độ.";
         caption.textContent = "Đang chờ dữ liệu vị trí";
         status.classList.remove("alert");
         status.innerHTML = "<i></i> Chưa có sự kiện";
