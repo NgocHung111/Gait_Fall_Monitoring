@@ -5,7 +5,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +32,9 @@ class Telemetry(BaseModel):
     event: str | None = None
     steps: int = Field(default=0, ge=0)
     uptime_ms: int | None = Field(default=None, ge=0)
+    rssi_dbm: int | None = Field(default=None, ge=-127, le=0)
+    wifi_ssid: str | None = Field(default=None, max_length=64)
+    battery_percent: int | None = Field(default=None, ge=0, le=100)
     wifi_data: WifiData | None = None
     step_timestamps_ms: list[int] | None = None
     step_intervals_ms: list[int] | None = None
@@ -54,6 +57,9 @@ class TelemetryResponse(BaseModel):
     steps: int
     gait: GaitMetrics
     location: dict[str, float] | None
+    rssi_dbm: int | None = None
+    wifi_ssid: str | None = None
+    battery_percent: int | None = None
     location_source: str | None = None
     location_age_seconds: int | None = None
     location_error: str | None
@@ -141,23 +147,54 @@ latest_phone_location: PhoneLocationUpdate | None = None
 step_reset_revision = 0
 
 
-def _read_telemetry_history(limit: int) -> list[TelemetryHistoryItem]:
+def _read_telemetry_history(
+    limit: int | None, since: datetime | None = None
+) -> list[TelemetryHistoryItem]:
     if not DATABASE_URL:
-        return list(telemetry_history)[-limit:]
+        records = list(telemetry_history)
+        if since is not None:
+            records = [record for record in records if record.timestamp_utc >= since]
+        return records if limit is None else records[-limit:]
 
     import psycopg
 
     try:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
-            rows = connection.execute(
-                """
-                SELECT record
-                FROM telemetry_history
-                ORDER BY id DESC
-                LIMIT %s
-                """,
-                (limit,),
-            ).fetchall()
+            if since is not None and limit is not None:
+                rows = connection.execute(
+                    """
+                    SELECT record
+                    FROM telemetry_history
+                    WHERE timestamp_utc >= %s
+                    ORDER BY id DESC
+                    LIMIT %s
+                    """,
+                    (since, limit),
+                ).fetchall()
+            elif since is not None:
+                rows = connection.execute(
+                    """
+                    SELECT record
+                    FROM telemetry_history
+                    WHERE timestamp_utc >= %s
+                    ORDER BY id
+                    """,
+                    (since,),
+                ).fetchall()
+            elif limit is not None:
+                rows = connection.execute(
+                    """
+                    SELECT record
+                    FROM telemetry_history
+                    ORDER BY id DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT record FROM telemetry_history ORDER BY id"
+                ).fetchall()
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not read telemetry history.") from exc
     return [TelemetryHistoryItem.model_validate(row[0]) for row in reversed(rows)]
@@ -295,11 +332,20 @@ def health_check() -> dict[str, str]:
 
 
 @app.get("/api/telemetry/history", response_model=list[TelemetryHistoryItem])
-def get_telemetry_history(limit: int = 250) -> list[TelemetryHistoryItem]:
-    if limit < 1 or limit > 250:
+def get_telemetry_history(
+    limit: int = 250,
+    since: datetime | None = None,
+    period: Literal["hour", "today", "all"] | None = None,
+) -> list[TelemetryHistoryItem]:
+    if period is None and (limit < 1 or limit > 250):
         raise HTTPException(status_code=422, detail="limit must be between 1 and 250.")
+    if since is not None and since.tzinfo is None:
+        raise HTTPException(status_code=422, detail="since must include a timezone.")
     try:
-        return _read_telemetry_history(limit)
+        if period is not None:
+            cutoff = since.astimezone(timezone.utc) if since is not None else None
+            return _read_telemetry_history(None, cutoff)
+        return _read_telemetry_history(limit, since)
     except TelemetryStorageError as exc:
         logger.exception("Could not read telemetry history.")
         raise HTTPException(
@@ -467,6 +513,9 @@ def receive_telemetry(telemetry: Telemetry) -> TelemetryResponse:
         steps=telemetry.steps,
         gait=gait,
         location=location,
+        rssi_dbm=telemetry.rssi_dbm,
+        wifi_ssid=telemetry.wifi_ssid,
+        battery_percent=telemetry.battery_percent,
         location_source=location_source,
         location_age_seconds=location_age_seconds,
         location_error=location_error,

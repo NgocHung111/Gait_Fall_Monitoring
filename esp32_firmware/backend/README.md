@@ -110,6 +110,15 @@ samples. Step updates include recent step intervals (up to the latest 10) so
 the backend can calculate cadence and gait variability.
 PostgreSQL preserves these telemetry records, not a full daily activity history.
 
+Telemetry records also include the ESP32 station SSID and RSSI in dBm. The
+dashboard shows the latest reported network and signal strength. Battery telemetry is sampled on GPIO0 through
+a 1:1 voltage divider (firmware multiplier 2.0), then linearly mapped from
+3.2 V (0%) to 4.2 V (100%) and clamped to that range. The divider midpoint
+must be wired to GPIO0 and share ground with the ESP32; never connect the LiPo
+cell directly to the ADC pin. Battery badge colors indicate above 50% (green),
+20%-50% (orange), and below 20% (red). The 1-hour and today chart filters use
+the browser's local time zone; "All" queries the available stored history.
+
 The backend serves the frontend on the same origin in production, avoiding a
 separate CORS/domain setup. Local CORS defaults permit the development frontend.
 

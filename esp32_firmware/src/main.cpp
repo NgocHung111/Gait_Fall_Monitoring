@@ -23,9 +23,16 @@ WiFiSetupPortal wifiSetupPortal;
 Preferences resetPreferences;
 bool resetPreferencesReady = false;
 
+constexpr uint8_t BATTERY_ADC_PIN = 0;
+constexpr float BATTERY_DIVIDER_MULTIPLIER = 2.0f;
+constexpr float BATTERY_EMPTY_VOLTAGE = 3.2f;
+constexpr float BATTERY_FULL_VOLTAGE = 4.2f;
+constexpr uint8_t BATTERY_ADC_SAMPLE_COUNT = 8;
+
 struct StepTelemetrySnapshot {
     uint32_t steps;
     uint8_t intervalCount;
+    int16_t rssiDbm = -127;
     uint32_t intervals[10];
 };
 
@@ -44,6 +51,23 @@ volatile bool stepCounterResetPending = false;
 volatile uint8_t wifiDisconnectReason = 0;
 
 void stepTelemetryTask(void* parameter);
+
+uint8_t readBatteryPercent()
+{
+    uint32_t measuredMillivolts = 0;
+    for (uint8_t sample = 0; sample < BATTERY_ADC_SAMPLE_COUNT; sample++) {
+        measuredMillivolts += analogReadMilliVolts(BATTERY_ADC_PIN);
+        delayMicroseconds(500);
+    }
+
+    const float adcVoltage =
+        static_cast<float>(measuredMillivolts) / BATTERY_ADC_SAMPLE_COUNT / 1000.0f;
+    const float batteryVoltage = adcVoltage * BATTERY_DIVIDER_MULTIPLIER;
+    const float percentage =
+        (batteryVoltage - BATTERY_EMPTY_VOLTAGE) /
+        (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE) * 100.0f;
+    return static_cast<uint8_t>(constrain(lroundf(percentage), 0L, 100L));
+}
 
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
 {
@@ -64,6 +88,9 @@ void setup() {
     while (!Serial && (millis() - startMs < 3000)) { delay(10); }
 
     Serial.println("\n=== HE THONG KHOI DONG ===");
+    pinMode(BATTERY_ADC_PIN, INPUT);
+    analogReadResolution(12);
+    analogSetPinAttenuation(BATTERY_ADC_PIN, ADC_11db);
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
     pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -171,6 +198,11 @@ bool sendAlertToBackend()
     doc["event"] = "FALL_DETECTED";
     doc["steps"] = stepCounter.getStepCount();
     doc["uptime_ms"] = millis();
+    doc["battery_percent"] = readBatteryPercent();
+    if (WiFi.status() == WL_CONNECTED) {
+        doc["rssi_dbm"] = WiFi.RSSI();
+        doc["wifi_ssid"] = WiFi.SSID();
+    }
     JsonObject wifiData = doc["wifi_data"].to<JsonObject>();
     if (!wifiTracker.scanNetworks(wifiData)) {
         Serial.println("WARNING: Wi-Fi scan failed; sending the alert without access points.");
@@ -204,6 +236,13 @@ bool sendStepUpdateToBackend(const StepTelemetrySnapshot& snapshot)
     doc["event"] = "STEP_UPDATE";
     doc["steps"] = snapshot.steps;
     doc["uptime_ms"] = millis();
+    doc["battery_percent"] = readBatteryPercent();
+    if (snapshot.rssiDbm >= -127 && snapshot.rssiDbm <= 0) {
+        doc["rssi_dbm"] = snapshot.rssiDbm;
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+        doc["wifi_ssid"] = WiFi.SSID();
+    }
 
     JsonArray intervalArray = doc["step_intervals_ms"].to<JsonArray>();
     for (uint8_t i = 0; i < snapshot.intervalCount; i++) {
@@ -345,6 +384,9 @@ void loop() {
         Serial.println("[RESET] Step counter reset by dashboard.");
         if (stepTelemetryQueue != nullptr) {
             StepTelemetrySnapshot snapshot{};
+            if (WiFi.status() == WL_CONNECTED) {
+                snapshot.rssiDbm = static_cast<int16_t>(WiFi.RSSI());
+            }
             if (xQueueOverwrite(stepTelemetryQueue, &snapshot) != pdPASS) {
                 Serial.println("[RESET] Could not queue the reset count update.");
             }
@@ -426,6 +468,7 @@ void loop() {
         } else {
             StepTelemetrySnapshot snapshot{};
             snapshot.steps = stepCounter.getStepCount();
+            snapshot.rssiDbm = static_cast<int16_t>(WiFi.RSSI());
             snapshot.intervalCount =
                 stepCounter.getRecentStepIntervals(snapshot.intervals, 10);
             if (xQueueOverwrite(stepTelemetryQueue, &snapshot) == pdPASS) {

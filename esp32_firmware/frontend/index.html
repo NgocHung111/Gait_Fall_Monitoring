@@ -166,6 +166,35 @@
       .breadcrumb strong { color: #566278; font-weight: 600; }
       .crumb-separator { color: #c3cad4; }
       .topbar-actions { display: flex; align-items: center; gap: 17px; }
+      .hardware-status { display: flex; align-items: center; gap: 8px; }
+      .hardware-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 9px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: #78869c;
+        background: white;
+        font-size: 9px;
+        white-space: nowrap;
+      }
+      .hardware-chip strong { color: #4b5a72; font-weight: 700; }
+      .hardware-chip.signal-good strong { color: #258d6d; }
+      .hardware-chip.signal-medium strong { color: #bd812a; }
+      .hardware-chip.signal-low strong { color: #c25f58; }
+      .battery-icon { width: 14px; height: 13px; flex: 0 0 auto; color: #258d6d; }
+      .battery-icon rect:first-child { fill: none; stroke: currentColor; }
+      .battery-icon rect:nth-of-type(2), .battery-icon .battery-level { fill: currentColor; }
+      .battery-good strong, .battery-good .battery-icon { color: #258d6d; }
+      .battery-medium strong, .battery-medium .battery-icon { color: #bd812a; }
+      .battery-low strong, .battery-low .battery-icon { color: #c25f58; }
+      .wifi-signal { width: 15px; height: 15px; flex: 0 0 auto; color: #d6dce5; }
+      .wifi-signal path, .wifi-signal circle { fill: none; stroke: currentColor; }
+      .wifi-signal .wifi-dot { fill: currentColor; stroke: none; }
+      .signal-good .wifi-signal { color: #258d6d; }
+      .signal-medium .wifi-signal .wifi-arc:nth-of-type(-n+2) { color: #bd812a; }
+      .signal-low .wifi-signal .wifi-arc:first-of-type { color: #c25f58; }
       .live-indicator {
         display: inline-flex;
         align-items: center;
@@ -411,6 +440,16 @@
       .panel-heading .eyebrow { margin-bottom: 5px; font-size: 8px; }
       h2 { margin-bottom: 0; font-size: 15px; font-weight: 700; letter-spacing: -.35px; }
       .period-chip { padding: 7px 9px; color: #8490a2; font-size: 9px; }
+      .time-range-filter {
+        padding: 7px 9px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: #69778d;
+        background: white;
+        font: inherit;
+        font-size: 9px;
+        cursor: pointer;
+      }
       .chart-wrap { position: relative; height: 202px; margin-top: 17px; }
       .chart-wrap canvas { width: 100% !important; height: 100% !important; }
       .chart-empty {
@@ -497,6 +536,56 @@
       }
       .map-footer a { color: #5278f4; font-weight: 600; text-decoration: none; }
       .map-footer a:hover { text-decoration: underline; }
+      .fall-history { margin-top: 16px; }
+      .fall-history-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 9px;
+      }
+      .fall-history-heading h3 {
+        margin: 0;
+        color: #3c4b64;
+        font-family: "Manrope", sans-serif;
+        font-size: 12px;
+      }
+      .fall-history-count { color: #98a3b2; font-size: 9px; }
+      .fall-history-scroll { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+      .fall-history-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+      .fall-history-table th, .fall-history-table td { padding: 9px 10px; border-bottom: 1px solid #eef1f5; text-align: left; vertical-align: middle; }
+      .fall-history-table th { position: sticky; top: 0; color: #8793a5; background: #f9fafc; font-weight: 600; }
+      .fall-history-table td { color: #59677d; }
+      .fall-history-table tr:last-child td { border-bottom: 0; }
+      .fall-history-empty { padding: 14px; color: #98a3b2; text-align: center; }
+      .fall-history-status { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+      .fall-history-status::before { width: 6px; height: 6px; border-radius: 50%; background: #e2a247; content: ""; }
+      .fall-history-status.sent::before { background: #31ad84; }
+      .fall-history-table button {
+        padding: 5px 7px;
+        border: 1px solid #dfe7ff;
+        border-radius: 5px;
+        color: #5278f4;
+        background: #f7f9ff;
+        font: inherit;
+        cursor: pointer;
+      }
+      .fall-history-table button:disabled { color: #a7afbc; cursor: default; }
+      #reset-confirmation {
+        width: min(420px, calc(100vw - 32px));
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        color: var(--ink);
+        box-shadow: 0 18px 60px #17243b30;
+      }
+      #reset-confirmation::backdrop { background: #1b263b66; backdrop-filter: blur(2px); }
+      .reset-dialog-content { padding: 21px; }
+      .reset-dialog-content h2 { margin: 0 0 8px; font-size: 16px; }
+      .reset-dialog-content p { margin: 0; color: #78869c; font-size: 11px; line-height: 1.6; }
+      .reset-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+      .reset-dialog-actions button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; color: #637087; background: white; font: inherit; font-size: 10px; cursor: pointer; }
+      .reset-dialog-actions #confirm-reset-steps { border-color: #e7aaa4; color: white; background: #cf7067; }
       .phone-location-panel {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -578,6 +667,9 @@
         .main-content { padding: 0 14px 20px; }
         .topbar { height: 58px; }
         .live-indicator { font-size: 0; }
+        .hardware-status { gap: 4px; }
+        .hardware-chip { padding: 6px; font-size: 8px; }
+        .hardware-chip span { display: none; }
         .page-heading { align-items: flex-start; flex-direction: column; margin-top: 23px; }
         .date-chip { padding: 8px 10px; }
         .connection-bar { align-items: flex-start; flex-direction: column; padding: 10px; }
@@ -595,6 +687,8 @@
         .panel { padding: 15px 12px 13px; }
         .panel-heading { gap: 6px; }
         .period-chip { padding: 6px 7px; font-size: 8px; }
+        .fall-history-scroll { max-height: 220px; }
+        .fall-history-table { min-width: 470px; }
         .chart-wrap { height: 205px; margin-top: 12px; }
         .gait-legend { gap: 8px; font-size: 8px; }
         .map-frame { height: 205px; }
@@ -653,6 +747,27 @@
           <div class="breadcrumb"><span>Trang chủ</span><span class="crumb-separator">/</span><strong>Tổng quan</strong></div>
           <div class="topbar-actions">
             <span class="live-indicator"><i></i> Đồng bộ tự động</span>
+            <div class="hardware-status" aria-label="Trạng thái phần cứng ESP32">
+              <span class="hardware-chip" id="battery-status-chip">
+                <span>Pin</span>
+                <svg class="battery-icon" viewBox="0 0 16 13" aria-hidden="true">
+                  <rect x="1" y="2" width="12" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                  <rect x="14" y="4.5" width="1.5" height="4" rx=".5"/>
+                  <rect class="battery-level" x="3" y="4" width="8" height="5" rx=".5"/>
+                </svg>
+                <strong id="battery-status">Chưa có dữ liệu</strong>
+              </span>
+              <span class="hardware-chip" id="wifi-status-chip">
+                <span>Wi-Fi</span>
+                <svg class="wifi-signal" viewBox="0 0 16 13" aria-hidden="true">
+                  <circle class="wifi-dot" cx="8" cy="11.5" r="1.25"/>
+                  <path class="wifi-arc" d="M5.2 8.7a4 4 0 0 1 5.6 0" stroke-width="1.6" stroke-linecap="round"/>
+                  <path class="wifi-arc" d="M2.8 6.2a7.4 7.4 0 0 1 10.4 0" stroke-width="1.6" stroke-linecap="round"/>
+                  <path class="wifi-arc" d="M.6 3.8a10.5 10.5 0 0 1 14.8 0" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+                <strong id="wifi-rssi-status">Chưa có dữ liệu</strong>
+              </span>
+            </div>
             <button class="icon-button" id="refresh-button" type="button" aria-label="Làm mới dữ liệu" title="Làm mới dữ liệu">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 9A7.5 7.5 0 0 1 18 6l2 6M4 17v-5h5m10.2 3A7.5 7.5 0 0 1 6 18l-2-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
@@ -763,7 +878,11 @@
                 <p class="eyebrow">HOẠT ĐỘNG</p>
                 <h2>Theo dõi bước chân</h2>
               </div>
-              <span class="period-chip">Lịch sử nhận được</span>
+              <select class="time-range-filter" id="steps-range-filter" aria-label="Khoảng thời gian biểu đồ bước chân">
+                <option value="hour">1 Giờ</option>
+                <option value="today">Hôm nay</option>
+                <option value="all" selected>Tất cả</option>
+              </select>
             </div>
             <div class="chart-wrap steps-chart-wrap">
               <canvas id="steps-chart" aria-label="Biểu đồ tổng số bước theo thời gian"></canvas>
@@ -778,7 +897,11 @@
                 <p class="eyebrow">PHÂN TÍCH CHUYỂN ĐỘNG</p>
                 <h2>Đặc trưng dáng đi</h2>
               </div>
-              <span class="period-chip">Theo telemetry</span>
+              <select class="time-range-filter" id="gait-range-filter" aria-label="Khoảng thời gian biểu đồ dáng đi">
+                <option value="hour">1 Giờ</option>
+                <option value="today">Hôm nay</option>
+                <option value="all" selected>Tất cả</option>
+              </select>
             </div>
             <div class="chart-wrap gait-chart-wrap">
               <canvas id="gait-chart" aria-label="Biểu đồ cadence, khoảng bước và biến thiên"></canvas>
@@ -825,6 +948,27 @@
             <span id="location-caption">Đang chờ dữ liệu vị trí</span>
             <a id="open-map-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Mở Google Maps <span aria-hidden="true">↗</span></a>
           </div>
+          <div class="fall-history">
+            <div class="fall-history-heading">
+              <h3>Lịch sử sự kiện té ngã</h3>
+              <span class="fall-history-count" id="fall-history-count">0 sự kiện</span>
+            </div>
+            <div class="fall-history-scroll">
+              <table class="fall-history-table">
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Tọa độ</th>
+                    <th>Telegram</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="fall-history-body">
+                  <tr><td class="fall-history-empty" colspan="4">Chưa có sự kiện té ngã.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
         <footer class="page-footer">
@@ -834,6 +978,17 @@
       </main>
     </div>
 
+    <dialog id="reset-confirmation" aria-labelledby="reset-dialog-title">
+      <div class="reset-dialog-content">
+        <h2 id="reset-dialog-title">Xác nhận reset số bước</h2>
+        <p>Bạn có chắc chắn muốn reset số bước về 0 cho phiên mới không? Lịch sử đã lưu sẽ không bị xóa.</p>
+        <div class="reset-dialog-actions">
+          <button id="cancel-reset-steps" type="button">Hủy</button>
+          <button id="confirm-reset-steps" type="button">Reset phiên mới</button>
+        </div>
+      </div>
+    </dialog>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script>
@@ -842,6 +997,8 @@
 
         const markerLayer = window.L ? window.L.layerGroup() : null;
         let map;
+        let focusMarker;
+        let manualFocusUntil = 0;
 
         function initializeMap() {
           const container = document.getElementById("fall-map");
@@ -940,7 +1097,9 @@
           }
 
           emptyState.hidden = true;
-          map.fitBounds(points, { padding: [30, 30], maxZoom: 16 });
+          if (Date.now() > manualFocusUntil) {
+            map.fitBounds(points, { padding: [30, 30], maxZoom: 16 });
+          }
           const [lat, lng] = points[points.length - 1];
           caption.textContent =
             "Tọa độ gần nhất: " + lat.toFixed(5) + ", " + lng.toFixed(5);
@@ -951,9 +1110,94 @@
             "<i></i> Có " + fallRecords.length + " sự kiện té ngã";
         }
 
+        function focusLocation(lat, lng) {
+          if (!map || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+            return;
+          }
+          manualFocusUntil = Date.now() + 5000;
+          map.setView([lat, lng], 16);
+          if (focusMarker) {
+            focusMarker.setLatLng([lat, lng]);
+          } else {
+            focusMarker = window.L.circleMarker([lat, lng], {
+              radius: 8,
+              color: "#ffffff",
+              weight: 3,
+              fillColor: "#5278f4",
+              fillOpacity: 1,
+            }).addTo(map);
+          }
+        }
+
+        function renderFallHistory(records) {
+          const body = document.getElementById("fall-history-body");
+          const fallRecords = records
+            .filter(function (record) {
+              return record && record.event === "FALL_DETECTED";
+            })
+            .slice()
+            .reverse();
+          document.getElementById("fall-history-count").textContent =
+            fallRecords.length + " sự kiện";
+          body.replaceChildren();
+
+          if (fallRecords.length === 0) {
+            const row = body.insertRow();
+            const cell = row.insertCell();
+            cell.colSpan = 4;
+            cell.className = "fall-history-empty";
+            cell.textContent = "Chưa có sự kiện té ngã.";
+            return;
+          }
+
+          fallRecords.forEach(function (record) {
+            const row = body.insertRow();
+            const timestampCell = row.insertCell();
+            const timestamp = record.timestamp_utc
+              ? new Date(record.timestamp_utc)
+              : null;
+            timestampCell.textContent =
+              timestamp && !Number.isNaN(timestamp.getTime())
+                ? timestamp.toLocaleString("vi-VN")
+                : "Không rõ";
+
+            const coordinateCell = row.insertCell();
+            const location = record.location;
+            const hasCoordinates =
+              location &&
+              Number.isFinite(location.lat) &&
+              Number.isFinite(location.lng);
+            coordinateCell.textContent = hasCoordinates
+              ? location.lat.toFixed(5) + ", " + location.lng.toFixed(5)
+              : "Chưa có tọa độ";
+
+            const telegramCell = row.insertCell();
+            const telegramStatus = document.createElement("span");
+            telegramStatus.className =
+              "fall-history-status" +
+              (record.telegram_sent ? " sent" : "");
+            telegramStatus.textContent = record.telegram_sent
+              ? "Đã gửi"
+              : "Chưa gửi";
+            telegramCell.appendChild(telegramStatus);
+
+            const actionCell = row.insertCell();
+            const focusButton = document.createElement("button");
+            focusButton.type = "button";
+            focusButton.textContent = "Xem vị trí";
+            focusButton.disabled = !hasCoordinates;
+            focusButton.addEventListener("click", function () {
+              focusLocation(location.lat, location.lng);
+            });
+            actionCell.appendChild(focusButton);
+          });
+        }
+
         window.GaitWatchMap = {
           initialize: initializeMap,
           renderLocations: renderLocations,
+          renderFallHistory: renderFallHistory,
+          focusLocation: focusLocation,
         };
       })();
 
@@ -1097,6 +1341,7 @@
         let gaitChart;
         let polling = false;
         let lastTelemetryRecords = [];
+        let historyLoaded = false;
         let resetPendingSince = null;
 
         function formatMetric(value, digits) {
@@ -1145,6 +1390,86 @@
           dot.classList.toggle("connected", state === "connected");
           dot.classList.toggle("error", state === "error");
           document.getElementById("connection-label").textContent = message;
+        }
+
+        function updateHardwareStatus(records) {
+          const battery = document.getElementById("battery-status");
+          const batteryChip = document.getElementById("battery-status-chip");
+          const wifi = document.getElementById("wifi-rssi-status");
+          const wifiChip = document.getElementById("wifi-status-chip");
+          const latestBatteryRecord = records.slice().reverse().find(function (record) {
+            return Number.isFinite(record.battery_percent);
+          });
+          const latestRssiRecord = records.slice().reverse().find(function (record) {
+            return Number.isFinite(record.rssi_dbm);
+          });
+
+          batteryChip.classList.remove("battery-good", "battery-medium", "battery-low");
+          battery.textContent = latestBatteryRecord
+            ? Math.round(latestBatteryRecord.battery_percent) + "%"
+            : "Chưa có dữ liệu";
+          batteryChip.title = latestBatteryRecord
+            ? "Dung lượng pin LiPo: " +
+              (latestBatteryRecord.battery_percent > 50
+                ? "An toàn"
+                : latestBatteryRecord.battery_percent >= 20
+                  ? "Trung bình"
+                  : "Cần sạc gấp") +
+              " (" +
+              Math.round(latestBatteryRecord.battery_percent) +
+              "%)."
+            : "Chưa nhận được số đo pin từ ESP32.";
+          batteryChip.setAttribute("aria-label", batteryChip.title);
+          if (latestBatteryRecord) {
+            batteryChip.classList.add(
+              latestBatteryRecord.battery_percent > 50
+                ? "battery-good"
+                : latestBatteryRecord.battery_percent >= 20
+                  ? "battery-medium"
+                  : "battery-low"
+            );
+          }
+
+          wifiChip.classList.remove("signal-good", "signal-medium", "signal-low");
+          if (!latestRssiRecord) {
+            wifi.textContent = "Chưa có dữ liệu";
+            wifiChip.title = "Chưa nhận được thông tin kết nối Wi-Fi từ ESP32.";
+            wifiChip.setAttribute("aria-label", wifiChip.title);
+            return;
+          }
+
+          const rssi = latestRssiRecord.rssi_dbm;
+          const ssid =
+            typeof latestRssiRecord.wifi_ssid === "string" &&
+            latestRssiRecord.wifi_ssid.trim()
+              ? latestRssiRecord.wifi_ssid.trim()
+              : "không rõ SSID";
+          wifi.textContent = rssi + " dBm (" + ssid + ")";
+          const signalLevel =
+            rssi >= -60
+              ? { className: "signal-good", label: "Rất tốt" }
+              : rssi >= -75
+                ? { className: "signal-medium", label: "Trung bình" }
+                : { className: "signal-low", label: "Yếu" };
+          wifiChip.classList.add(signalLevel.className);
+          wifiChip.title =
+            "Đang kết nối: " + ssid + " | Tín hiệu: " + rssi + " dBm";
+          wifiChip.setAttribute("aria-label", wifiChip.title);
+        }
+
+        function filterRecordsByRange(records, range) {
+          if (range === "all") {
+            return records;
+          }
+          const now = new Date();
+          const start =
+            range === "hour"
+              ? new Date(now.getTime() - 60 * 60 * 1000)
+              : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          return records.filter(function (record) {
+            const timestamp = Date.parse(record.timestamp_utc);
+            return Number.isFinite(timestamp) && timestamp >= start.getTime();
+          });
         }
 
         function updateStats(records) {
@@ -1217,15 +1542,24 @@
           });
           lastTelemetryRecords = ordered;
           updateStats(ordered);
+          updateHardwareStatus(ordered);
+          window.GaitWatchMap.renderFallHistory(ordered);
 
-          stepsChart.data.labels = ordered.map(toDateLabel);
-          stepsChart.data.datasets[0].data = ordered.map(function (record) {
+          const stepsRecords = filterRecordsByRange(
+            ordered,
+            document.getElementById("steps-range-filter").value
+          );
+          stepsChart.data.labels = stepsRecords.map(toDateLabel);
+          stepsChart.data.datasets[0].data = stepsRecords.map(function (record) {
             return Number(record.steps) || 0;
           });
           stepsChart.update("none");
-          document.getElementById("steps-empty").hidden = ordered.length > 0;
+          document.getElementById("steps-empty").hidden = stepsRecords.length > 0;
 
-          const measured = ordered.filter(hasGaitData);
+          const measured = filterRecordsByRange(
+            ordered,
+            document.getElementById("gait-range-filter").value
+          ).filter(hasGaitData);
           gaitChart.data.labels = measured.map(toDateLabel);
           gaitChart.data.datasets[0].data = measured.map(function (record) {
             return record.gait.cadence_steps_per_minute ?? null;
@@ -1245,6 +1579,9 @@
           const weightInput = document.getElementById("body-weight");
           const stepLengthInput = document.getElementById("step-length");
           const resetButton = document.getElementById("reset-steps-button");
+          const resetDialog = document.getElementById("reset-confirmation");
+          const confirmResetButton = document.getElementById("confirm-reset-steps");
+          const cancelResetButton = document.getElementById("cancel-reset-steps");
           const controlTokenInput = document.getElementById("device-control-token");
           const resetStatus = document.getElementById("reset-status");
           controlTokenInput.value =
@@ -1280,14 +1617,14 @@
 
           weightInput.addEventListener("change", saveEstimateSettings);
           stepLengthInput.addEventListener("change", saveEstimateSettings);
-          resetButton.addEventListener("click", async function () {
-            if (
-              !window.confirm(
-                "Reset bộ đếm trên ESP32 về 0 và bắt đầu phiên mới? Lịch sử đã lưu sẽ không bị xóa."
-              )
-            ) {
-              return;
-            }
+          resetButton.addEventListener("click", function () {
+            resetDialog.showModal();
+          });
+          cancelResetButton.addEventListener("click", function () {
+            resetDialog.close();
+          });
+          confirmResetButton.addEventListener("click", async function () {
+            resetDialog.close();
             const token = controlTokenInput.value.trim();
             if (!token) {
               resetStatus.textContent =
@@ -1295,7 +1632,7 @@
               return;
             }
 
-            resetButton.disabled = true;
+            confirmResetButton.disabled = true;
             resetStatus.textContent = "Đang gửi lệnh reset đến máy chủ...";
             try {
               const response = await fetch("/api/device/steps/reset", {
@@ -1320,7 +1657,7 @@
               resetStatus.textContent =
                 error.message || "Không thể gửi lệnh reset.";
             } finally {
-              resetButton.disabled = false;
+              confirmResetButton.disabled = false;
             }
           });
         }
@@ -1331,17 +1668,53 @@
           }
           polling = true;
           try {
-            const response = await fetch(HISTORY_URL, {
+            const latestTimestamp = lastTelemetryRecords.length
+              ? Date.parse(
+                  lastTelemetryRecords[lastTelemetryRecords.length - 1].timestamp_utc
+                )
+              : Date.now();
+            const historyUrl = historyLoaded
+              ? HISTORY_URL +
+                "?since=" +
+                encodeURIComponent(
+                  new Date(latestTimestamp - 1000).toISOString()
+                )
+              : HISTORY_URL + "?period=all";
+            const response = await fetch(historyUrl, {
               headers: { Accept: "application/json" },
               cache: "no-store",
             });
             if (!response.ok) {
               throw new Error("Backend trả về HTTP " + response.status);
             }
-            const records = await response.json();
+            let records = await response.json();
             if (!Array.isArray(records)) {
               throw new Error("Phản hồi lịch sử telemetry không hợp lệ.");
             }
+            if (historyLoaded) {
+              const knownRecords = new Set(
+                lastTelemetryRecords.map(function (record) {
+                  return JSON.stringify(record);
+                })
+              );
+              records = lastTelemetryRecords.concat(
+                records.filter(function (record) {
+                  const key = JSON.stringify(record);
+                  if (knownRecords.has(key)) {
+                    return false;
+                  }
+                  knownRecords.add(key);
+                  return true;
+                })
+              );
+              records.sort(function (left, right) {
+                return (
+                  new Date(left.timestamp_utc || 0) -
+                  new Date(right.timestamp_utc || 0)
+                );
+              });
+            }
+            historyLoaded = true;
             renderTelemetry(records);
             setConnectionState("connected", "Đã kết nối · cập nhật mỗi giây");
             document.getElementById("last-updated").textContent =
@@ -1494,6 +1867,16 @@
           if (!createCharts()) {
             return;
           }
+          document
+            .getElementById("steps-range-filter")
+            .addEventListener("change", function () {
+              renderTelemetry(lastTelemetryRecords);
+            });
+          document
+            .getElementById("gait-range-filter")
+            .addEventListener("change", function () {
+              renderTelemetry(lastTelemetryRecords);
+            });
           loadTelemetry();
           window.setInterval(loadTelemetry, POLL_INTERVAL_MS);
         });

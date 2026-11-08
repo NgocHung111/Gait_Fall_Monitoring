@@ -54,6 +54,14 @@ class TelemetryHistoryTests(unittest.TestCase):
         self.assertEqual(history[0].gait.cadence_steps_per_minute, 60.0)
         self.assertIsNotNone(history[0].timestamp_utc)
 
+    def test_time_range_history_returns_records_after_cutoff(self) -> None:
+        recent = receive_telemetry(Telemetry(event="STEP_UPDATE", steps=2))
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=1)
+        history = get_telemetry_history(period="hour", since=cutoff)
+
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].steps, recent.steps)
+
     def test_step_update_is_stored_without_sending_telegram(self) -> None:
         response = receive_telemetry(
             Telemetry(
@@ -71,6 +79,25 @@ class TelemetryHistoryTests(unittest.TestCase):
             response.gait.cadence_steps_per_minute, 60.0 / 0.95
         )
         self.assertEqual(history[0].event, "STEP_UPDATE")
+
+    def test_persists_hardware_status_in_telemetry_history(self) -> None:
+        response = receive_telemetry(
+            Telemetry(
+                event="STEP_UPDATE",
+                steps=9,
+                rssi_dbm=-63,
+                wifi_ssid="Home_WiFi",
+                battery_percent=82,
+            )
+        )
+
+        history = get_telemetry_history(limit=1)
+        self.assertEqual(response.rssi_dbm, -63)
+        self.assertEqual(response.wifi_ssid, "Home_WiFi")
+        self.assertEqual(response.battery_percent, 82)
+        self.assertEqual(history[0].rssi_dbm, -63)
+        self.assertEqual(history[0].wifi_ssid, "Home_WiFi")
+        self.assertEqual(history[0].battery_percent, 82)
 
     def test_phone_location_is_used_for_fall_and_telegram(self) -> None:
         timestamp = datetime.now(timezone.utc)
