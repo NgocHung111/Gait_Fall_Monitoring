@@ -3,7 +3,6 @@
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
-#include <esp_system.h>
 
 namespace {
 constexpr char SETUP_AP_NAME[] = "GaitWatch-Setup";
@@ -110,11 +109,7 @@ bool WiFiSetupPortal::startPortal()
         return true;
     }
 
-    static constexpr char HEX_DIGITS[] = "0123456789ABCDEF";
-    setupPassword = "GW-";
-    for (uint8_t i = 0; i < 10; ++i) {
-        setupPassword += HEX_DIGITS[esp_random() & 0x0F];
-    }
+    setupPassword = WIFI_SETUP_PASSWORD;
 
     WiFi.mode(WIFI_AP_STA);
     if (!WiFi.softAP(SETUP_AP_NAME, setupPassword.c_str())) {

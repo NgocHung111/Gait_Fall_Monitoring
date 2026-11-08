@@ -49,10 +49,13 @@ when the service is created, and it may differ if that name is unavailable.
    the firmware. The URL is public configuration, not a credential.
 5. The ESP32-C3 requires a 2.4 GHz hotspot or Wi-Fi network. If it cannot
    connect to its saved network for 30 seconds, it opens a local setup
-   network named `GaitWatch-Setup`. Read the temporary setup password in the
-   Serial Monitor, connect a phone to that network, then open
-   `http://192.168.4.1`. Select the nearby Wi-Fi, enter its password, and save;
-   the ESP32 stores the credentials and reconnects without reflashing.
+   network named `GaitWatch-Setup`, using the fixed password `GaitWatch2026!`.
+   Connect a phone to that network, then open `http://192.168.4.1`. Select the
+   nearby Wi-Fi, enter its password, and save; the ESP32 stores the credentials
+   and reconnects without reflashing. Change `WIFI_SETUP_PASSWORD` in
+   `esp32_firmware/include/config.h` if you want a different setup password.
+   This password is shared by devices running this firmware, so anyone nearby
+   who knows it can change the device's Wi-Fi settings.
 
 Render's free web service spins down after 15 minutes without requests, so its
 first request after idle can take about a minute. Free services have usage
