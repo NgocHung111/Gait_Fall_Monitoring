@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const POLL_INTERVAL_MS = 5000;
+  const POLL_INTERVAL_MS = 1000;
   const HISTORY_LIMIT = 250;
   const DEFAULT_API_URL =
     window.location.port === "5500"
@@ -163,7 +163,7 @@
         throw new Error("Phản hồi lịch sử telemetry không hợp lệ.");
       }
       renderTelemetry(records);
-      setConnectionState("connected", "Đã kết nối · cập nhật mỗi 5 giây");
+      setConnectionState("connected", "Đã kết nối · cập nhật mỗi giây");
       document.getElementById("last-updated").textContent =
         "Cập nhật lúc " +
         new Date().toLocaleTimeString("vi-VN", {

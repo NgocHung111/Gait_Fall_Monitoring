@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 #include <cstring>
 #include "imu_sensor.h"
 #include "step_counter.h"
@@ -15,6 +18,13 @@ StepCounter stepCounter;
 FallDetector fallDetector;
 WiFiTracker wifiTracker;
 
+struct StepTelemetrySnapshot {
+    uint32_t steps;
+    uint8_t intervalCount;
+    uint32_t intervals[10];
+};
+
+QueueHandle_t stepTelemetryQueue = nullptr;
 bool isAlerting = false;
 unsigned long alertStartTime = 0;
 unsigned long lastWiFiAttempt = 0;
@@ -26,6 +36,8 @@ volatile bool wifiRetryPending = false;
 volatile bool wifiDisconnectedEventPending = false;
 volatile bool wifiGotIpEventPending = false;
 volatile uint8_t wifiDisconnectReason = 0;
+
+void stepTelemetryTask(void* parameter);
 
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
 {
@@ -66,6 +78,16 @@ void setup() {
         Serial.println("Wi-Fi credentials are placeholders; configure them in config.h.");
     }
     lastTelemetryAttempt = millis();
+
+    stepTelemetryQueue = xQueueCreate(1, sizeof(StepTelemetrySnapshot));
+    if (stepTelemetryQueue == nullptr) {
+        Serial.println("ERROR: Could not create the step telemetry queue.");
+    } else if (xTaskCreate(stepTelemetryTask, "stepTelemetry", 6144, nullptr, 1,
+                           nullptr) != pdPASS) {
+        Serial.println("ERROR: Could not start the step telemetry task.");
+        vQueueDelete(stepTelemetryQueue);
+        stepTelemetryQueue = nullptr;
+    }
 }
 
 bool buttonPressed(unsigned long now)
@@ -135,24 +157,12 @@ bool postTelemetry(JsonDocument& doc, const char* description,
     return true;
 }
 
-void addRecentStepIntervals(JsonDocument& doc)
-{
-    uint32_t intervals[10];
-    const uint8_t intervalCount =
-        stepCounter.getRecentStepIntervals(intervals, 10);
-    JsonArray intervalArray = doc["step_intervals_ms"].to<JsonArray>();
-    for (uint8_t i = 0; i < intervalCount; i++) {
-        intervalArray.add(intervals[i]);
-    }
-}
-
 bool sendAlertToBackend()
 {
     JsonDocument doc;
     doc["event"] = "FALL_DETECTED";
     doc["steps"] = stepCounter.getStepCount();
     doc["uptime_ms"] = millis();
-    addRecentStepIntervals(doc);
     JsonObject wifiData = doc["wifi_data"].to<JsonObject>();
     if (!wifiTracker.scanNetworks(wifiData)) {
         Serial.println("WARNING: Wi-Fi scan failed; sending the alert without access points.");
@@ -180,13 +190,17 @@ bool sendAlertToBackend()
     return true;
 }
 
-bool sendStepUpdateToBackend()
+bool sendStepUpdateToBackend(const StepTelemetrySnapshot& snapshot)
 {
     JsonDocument doc;
     doc["event"] = "STEP_UPDATE";
-    doc["steps"] = stepCounter.getStepCount();
+    doc["steps"] = snapshot.steps;
     doc["uptime_ms"] = millis();
-    addRecentStepIntervals(doc);
+
+    JsonArray intervalArray = doc["step_intervals_ms"].to<JsonArray>();
+    for (uint8_t i = 0; i < snapshot.intervalCount; i++) {
+        intervalArray.add(snapshot.intervals[i]);
+    }
 
     String responseBody;
     if (!postTelemetry(doc, "step update", 20000, responseBody)) {
@@ -194,8 +208,26 @@ bool sendStepUpdateToBackend()
     }
 
     Serial.printf("[TELEMETRY] Step update accepted by backend: %lu steps.\n",
-                  static_cast<unsigned long>(stepCounter.getStepCount()));
+                  static_cast<unsigned long>(snapshot.steps));
     return true;
+}
+
+void stepTelemetryTask(void*)
+{
+    StepTelemetrySnapshot snapshot{};
+    for (;;) {
+        if (xQueueReceive(stepTelemetryQueue, &snapshot, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+
+        while (!sendStepUpdateToBackend(snapshot)) {
+            StepTelemetrySnapshot latestSnapshot{};
+            if (xQueueReceive(stepTelemetryQueue, &latestSnapshot,
+                              pdMS_TO_TICKS(1000)) == pdTRUE) {
+                snapshot = latestSnapshot;
+            }
+        }
+    }
 }
 
 void loop() {
@@ -271,10 +303,7 @@ void loop() {
                 "va gui request POST den Backend %s.\n",
                 SERVER_URL);
             digitalWrite(BUZZER_PIN, LOW);
-            if (sendAlertToBackend()) {
-                lastReportedStepCount = stepCounter.getStepCount();
-            }
-            lastTelemetryAttempt = millis();
+            sendAlertToBackend();
             isAlerting = false;
             fallDetector.reset();
         }
@@ -283,9 +312,19 @@ void loop() {
     if (!isAlerting &&
         now - lastTelemetryAttempt >= TELEMETRY_INTERVAL_MS &&
         stepCounter.getStepCount() > lastReportedStepCount) {
-        lastTelemetryAttempt = now;
-        if (sendStepUpdateToBackend()) {
-            lastReportedStepCount = stepCounter.getStepCount();
+        if (stepTelemetryQueue == nullptr) {
+            Serial.println("ERROR: Step update skipped because the telemetry task is unavailable.");
+        } else {
+            StepTelemetrySnapshot snapshot{};
+            snapshot.steps = stepCounter.getStepCount();
+            snapshot.intervalCount =
+                stepCounter.getRecentStepIntervals(snapshot.intervals, 10);
+            if (xQueueOverwrite(stepTelemetryQueue, &snapshot) == pdPASS) {
+                lastReportedStepCount = snapshot.steps;
+                lastTelemetryAttempt = now;
+            } else {
+                Serial.println("ERROR: Could not queue the step telemetry update.");
+            }
         }
     }
 
