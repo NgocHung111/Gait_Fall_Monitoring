@@ -21,6 +21,7 @@ public:
     bool processSample(const IMUData& data, unsigned long currentTime);
     uint32_t getStepCount() const { return step_count; }
     uint8_t getRecentStepIntervals(uint32_t* intervals, uint8_t maxIntervals) const;
+    void reset();
 };
 
 #endif

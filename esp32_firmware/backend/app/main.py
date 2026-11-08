@@ -44,6 +44,10 @@ class PhoneLocationUpdate(BaseModel):
     timestamp_utc: datetime
 
 
+class StepResetState(BaseModel):
+    reset_revision: int = Field(ge=0)
+
+
 class TelemetryResponse(BaseModel):
     received: bool
     event: str | None
@@ -94,6 +98,21 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS device_control (
+                    id SMALLINT PRIMARY KEY CHECK (id = 1),
+                    reset_revision BIGINT NOT NULL DEFAULT 0
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO device_control (id, reset_revision)
+                VALUES (1, 0)
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
     else:
         logger.warning(
             "DATABASE_URL is not configured; telemetry history is in memory only."
@@ -119,6 +138,7 @@ app.add_middleware(
 )
 telemetry_history: deque[TelemetryHistoryItem] = deque(maxlen=LOCAL_HISTORY_LIMIT)
 latest_phone_location: PhoneLocationUpdate | None = None
+step_reset_revision = 0
 
 
 def _read_telemetry_history(limit: int) -> list[TelemetryHistoryItem]:
@@ -226,6 +246,49 @@ class TelemetryStorageError(RuntimeError):
     pass
 
 
+def _read_step_reset_state() -> StepResetState:
+    if not DATABASE_URL:
+        return StepResetState(reset_revision=step_reset_revision)
+
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                "SELECT reset_revision FROM device_control WHERE id = 1"
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not read the step reset state.") from exc
+    if row is None:
+        raise TelemetryStorageError("The step reset state has not been initialized.")
+    return StepResetState(reset_revision=row[0])
+
+
+def _request_step_reset() -> StepResetState:
+    global step_reset_revision
+    if not DATABASE_URL:
+        step_reset_revision += 1
+        return StepResetState(reset_revision=step_reset_revision)
+
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                """
+                UPDATE device_control
+                SET reset_revision = reset_revision + 1
+                WHERE id = 1
+                RETURNING reset_revision
+                """
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not request a step counter reset.") from exc
+    if row is None:
+        raise TelemetryStorageError("The step reset state has not been initialized.")
+    return StepResetState(reset_revision=row[0])
+
+
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok", "storage": "postgres" if DATABASE_URL else "memory"}
@@ -241,6 +304,40 @@ def get_telemetry_history(limit: int = 250) -> list[TelemetryHistoryItem]:
         logger.exception("Could not read telemetry history.")
         raise HTTPException(
             status_code=503, detail="Telemetry storage is temporarily unavailable."
+        ) from exc
+
+
+@app.get("/api/device/reset-state", response_model=StepResetState)
+def get_device_reset_state() -> StepResetState:
+    try:
+        return _read_step_reset_state()
+    except TelemetryStorageError as exc:
+        logger.exception("Could not read the step reset state.")
+        raise HTTPException(
+            status_code=503, detail="Device command storage is temporarily unavailable."
+        ) from exc
+
+
+@app.post("/api/device/steps/reset", response_model=StepResetState)
+def reset_device_steps(
+    authorization: str | None = Header(default=None),
+) -> StepResetState:
+    if not PHONE_LOCATION_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Configure PHONE_LOCATION_TOKEN on the server before resetting.",
+        )
+    expected_authorization = f"Bearer {PHONE_LOCATION_TOKEN}"
+    if authorization is None or not hmac.compare_digest(
+        authorization.encode("utf-8"), expected_authorization.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Invalid dashboard control token.")
+    try:
+        return _request_step_reset()
+    except TelemetryStorageError as exc:
+        logger.exception("Could not request a step counter reset.")
+        raise HTTPException(
+            status_code=503, detail="Device command storage is temporarily unavailable."
         ) from exc
 
 

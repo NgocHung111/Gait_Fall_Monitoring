@@ -53,3 +53,15 @@ uint8_t StepCounter::getRecentStepIntervals(
     }
     return count;
 }
+
+void StepCounter::reset() {
+    step_count = 0;
+    wasAboveThreshold = false;
+    hasPreviousStep = false;
+    last_step_time = 0;
+    for (uint8_t i = 0; i < MAX_RECENT_INTERVALS; i++) {
+        recentIntervals[i] = 0;
+    }
+    recentIntervalCount = 0;
+    nextIntervalIndex = 0;
+}

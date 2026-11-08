@@ -7,12 +7,15 @@ from fastapi import HTTPException
 from app.main import (
     PHONE_LOCATION_MAX_AGE_SECONDS,
     PhoneLocationUpdate,
+    StepResetState,
     Telemetry,
     TelemetryHistoryItem,
     _read_telemetry_history,
     _store_telemetry_record,
     get_telemetry_history,
+    get_device_reset_state,
     receive_telemetry,
+    reset_device_steps,
     telemetry_history,
     update_phone_location,
 )
@@ -22,8 +25,16 @@ from app.services.gait_analysis import GaitMetrics
 class TelemetryHistoryTests(unittest.TestCase):
     def setUp(self) -> None:
         telemetry_history.clear()
+        self._reset_step_revision()
         self.addCleanup(self._clear_phone_location)
         self.addCleanup(telemetry_history.clear)
+        self.addCleanup(self._reset_step_revision)
+
+    @staticmethod
+    def _reset_step_revision() -> None:
+        import app.main
+
+        app.main.step_reset_revision = 0
 
     @staticmethod
     def _clear_phone_location() -> None:
@@ -93,6 +104,26 @@ class TelemetryHistoryTests(unittest.TestCase):
         with patch("app.main.PHONE_LOCATION_TOKEN", "test-token"):
             with self.assertRaises(HTTPException) as error:
                 update_phone_location(location, authorization="Bearer wrong-token")
+        self.assertEqual(error.exception.status_code, 401)
+
+    def test_dashboard_step_reset_increments_device_revision(self) -> None:
+        with (
+            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
+            patch("app.main.DATABASE_URL", ""),
+        ):
+            state = reset_device_steps(authorization="Bearer test-token")
+            current_state = get_device_reset_state()
+
+        self.assertEqual(state, StepResetState(reset_revision=1))
+        self.assertEqual(current_state, state)
+
+    def test_dashboard_step_reset_requires_token(self) -> None:
+        with (
+            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
+            patch("app.main.DATABASE_URL", ""),
+        ):
+            with self.assertRaises(HTTPException) as error:
+                reset_device_steps(authorization="Bearer wrong-token")
         self.assertEqual(error.exception.status_code, 401)
 
     def test_expired_phone_location_is_not_attached_to_a_fall(self) -> None:

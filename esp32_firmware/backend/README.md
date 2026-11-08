@@ -89,6 +89,20 @@ do not use it for sensitive real-world health monitoring without adding access
 control. The map uses OpenStreetMap tiles with attribution and is subject to
 the public tile service's usage policy.
 
+### Activity distance, calories, and reset
+
+The dashboard estimates distance as `steps × step length`. Estimated calories
+use `distance_km × body_weight_kg × 0.5`; these are rough activity estimates,
+not medical measurements. The default step length is 70 cm and default weight
+is 65 kg. Edit them in the dashboard; values are saved only in that browser.
+
+The **Reset số bước** button requires the same `PHONE_LOCATION_TOKEN` used for
+phone location sharing. It creates a new counting session by issuing a
+revisioned command; it does not delete telemetry history. The ESP32 polls for
+the command while online and then resets its step counter and gait intervals.
+The dashboard may take a few seconds to show zero. If the device is offline,
+the command is applied after it reconnects.
+
 The firmware queues a step-count update as soon as it detects a new step, as
 well as a separate record when a fall alert is not canceled. Network posting
 runs in a separate task, and the firmware does not upload continuous IMU

@@ -261,7 +261,7 @@
       .connection-dot.error { background: #e36a70; box-shadow: 0 0 0 3px #e36a701f; }
       .stats-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 15px;
         margin-bottom: 17px;
       }
@@ -292,6 +292,8 @@
       .cadence-icon { color: #2da987; background: #eaf8f3; }
       .interval-icon { color: #db9738; background: #fff6e8; }
       .variability-icon { color: #9470df; background: #f4efff; }
+      .distance-icon { color: #278da0; background: #e9f8fa; }
+      .calories-icon { color: #db7550; background: #fff1eb; }
       .stat-label {
         overflow: hidden;
         color: #738096;
@@ -327,6 +329,53 @@
         color: #a0aaba;
         font-size: 9px;
       }
+      .activity-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin: -2px 0 17px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+      }
+      .activity-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+      .activity-settings label { display: flex; align-items: center; gap: 7px; color: #78869c; font-size: 10px; }
+      .activity-settings input {
+        width: 72px;
+        padding: 7px 8px;
+        border: 1px solid #dfe5ef;
+        border-radius: 6px;
+        color: #34425a;
+        font: inherit;
+        font-size: 10px;
+      }
+      .activity-controls-actions { display: flex; align-items: center; gap: 9px; }
+      .activity-controls-actions input {
+        width: 150px;
+        padding: 8px 9px;
+        border: 1px solid #dfe5ef;
+        border-radius: 6px;
+        color: #34425a;
+        font: inherit;
+        font-size: 10px;
+      }
+      .activity-controls-note { color: #98a3b2; font-size: 9px; }
+      #reset-steps-button {
+        padding: 8px 11px;
+        border: 1px solid #f1d8d5;
+        border-radius: 7px;
+        color: #b75e56;
+        background: #fff8f7;
+        font: inherit;
+        font-size: 10px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      #reset-steps-button:disabled { opacity: .6; cursor: default; }
+      #reset-status { color: #78869c; font-size: 9px; }
       .stat-sparkline {
         position: absolute;
         right: 12px;
@@ -510,6 +559,8 @@
         .main-content { width: calc(100% - 220px); margin-left: 220px; }
         .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .stat-card { min-height: 145px; }
+        .activity-controls { align-items: flex-start; flex-direction: column; }
+        .activity-controls-actions { width: 100%; justify-content: space-between; }
       }
       @media (max-width: 820px) {
         .sidebar { width: 68px; align-items: center; padding: 19px 9px 13px; }
@@ -539,6 +590,8 @@
         .stat-more { display: none; }
         .stat-value { margin-top: 15px; font-size: 24px; }
         .stat-foot { font-size: 8px; }
+        .activity-settings { align-items: flex-start; flex-direction: column; }
+        .activity-controls-actions { align-items: flex-start; flex-direction: column; }
         .panel { padding: 15px 12px 13px; }
         .panel-heading { gap: 6px; }
         .period-chip { padding: 6px 7px; font-size: 8px; }
@@ -666,6 +719,41 @@
             <div class="stat-foot"><span class="stat-hint">Hệ số biến thiên khoảng bước</span></div>
             <div class="stat-sparkline sparkline-purple" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
           </article>
+          <article class="stat-card">
+            <div class="stat-card-top">
+              <span class="stat-icon distance-icon" aria-hidden="true">↔</span>
+              <span class="stat-label">Quãng đường ước tính</span>
+            </div>
+            <div class="stat-value"><span id="distance-value">0</span><small id="distance-unit"> m</small></div>
+            <div class="stat-foot"><span class="stat-hint">Dựa trên số bước và độ dài bước</span></div>
+            <div class="stat-sparkline sparkline-green" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-card-top">
+              <span class="stat-icon calories-icon" aria-hidden="true">♨</span>
+              <span class="stat-label">Calo tiêu thụ ước tính</span>
+            </div>
+            <div class="stat-value"><span id="calories-value">0,0</span><small> kcal</small></div>
+            <div class="stat-foot"><span class="stat-hint">Ước tính từ cân nặng và quãng đường</span></div>
+            <div class="stat-sparkline sparkline-orange" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </article>
+        </section>
+
+        <section class="activity-controls" aria-label="Thiết lập và điều khiển phiên đếm">
+          <div class="activity-settings">
+            <label for="body-weight">Cân nặng
+              <input id="body-weight" type="number" min="20" max="300" step="0.5" value="65"> kg
+            </label>
+            <label for="step-length">Độ dài bước
+              <input id="step-length" type="number" min="20" max="150" step="1" value="70"> cm
+            </label>
+            <span class="activity-controls-note">Chỉ lưu trên trình duyệt này; số đo là ước tính.</span>
+          </div>
+          <div class="activity-controls-actions">
+            <span id="reset-status" role="status" aria-live="polite">Reset bắt đầu phiên mới, không xóa lịch sử.</span>
+            <input id="device-control-token" type="password" autocomplete="off" aria-label="Mã bảo mật Render" placeholder="Mã bảo mật Render">
+            <button id="reset-steps-button" type="button">Reset số bước</button>
+          </div>
         </section>
 
         <section class="content-grid" id="gait-section">
@@ -970,6 +1058,10 @@
                 return;
               }
               sessionStorage.setItem("gaitwatch-phone-location-token", token);
+              const controlTokenInput = document.getElementById("device-control-token");
+              if (controlTokenInput) {
+                controlTokenInput.value = token;
+              }
               tracking = true;
               startButton.disabled = true;
               stopButton.disabled = false;
@@ -1004,6 +1096,8 @@
         let stepsChart;
         let gaitChart;
         let polling = false;
+        let lastTelemetryRecords = [];
+        let resetPendingSince = null;
 
         function formatMetric(value, digits) {
           if (
@@ -1055,9 +1149,23 @@
 
         function updateStats(records) {
           const latest = records.length ? records[records.length - 1] : null;
-          const gait = latest ? latest.gait || {} : {};
-          document.getElementById("steps-value").textContent = latest
-            ? numberFormat.format(latest.steps)
+          if (
+            resetPendingSince !== null &&
+            latest &&
+            latest.event === "STEP_UPDATE" &&
+            Number(latest.steps) === 0 &&
+            Date.parse(latest.timestamp_utc) >= resetPendingSince - 30000
+          ) {
+            resetPendingSince = null;
+            document.getElementById("reset-status").textContent =
+              "ESP32 đã bắt đầu phiên đếm mới; lịch sử cũ vẫn được giữ.";
+          }
+          const resetPending = resetPendingSince !== null;
+          const gait = latest && !resetPending ? latest.gait || {} : {};
+          const currentSteps =
+            resetPending ? 0 : Number(latest && latest.steps) || 0;
+          document.getElementById("steps-value").textContent = latest || resetPending
+            ? numberFormat.format(currentSteps)
             : "—";
           document.getElementById("cadence-value").textContent = formatMetric(
             gait.cadence_steps_per_minute,
@@ -1069,6 +1177,29 @@
           );
           document.getElementById("variability-value").textContent =
             formatMetric(gait.variability_cv_percent, 1);
+          const weightInput = Number(document.getElementById("body-weight").value);
+          const stepLengthInput = Number(
+            document.getElementById("step-length").value
+          );
+          const weightKg =
+            weightInput >= 20 && weightInput <= 300 ? weightInput : 65;
+          const stepLengthCm =
+            stepLengthInput >= 20 && stepLengthInput <= 150
+              ? stepLengthInput
+              : 70;
+          const distanceMeters = currentSteps * (stepLengthCm / 100);
+          const distanceValue =
+            distanceMeters >= 1000
+              ? distanceMeters / 1000
+              : distanceMeters;
+          document.getElementById("distance-value").textContent =
+            formatMetric(distanceValue, distanceMeters >= 1000 ? 2 : 0);
+          document.getElementById("distance-unit").textContent =
+            distanceMeters >= 1000 ? " km" : " m";
+          document.getElementById("calories-value").textContent = formatMetric(
+            (distanceMeters / 1000) * weightKg * 0.5,
+            1
+          );
           document.getElementById("current-date").textContent =
             new Date().toLocaleDateString("vi-VN", {
               day: "2-digit",
@@ -1084,6 +1215,7 @@
               new Date(right.timestamp_utc || 0)
             );
           });
+          lastTelemetryRecords = ordered;
           updateStats(ordered);
 
           stepsChart.data.labels = ordered.map(toDateLabel);
@@ -1107,6 +1239,90 @@
           gaitChart.update("none");
           document.getElementById("gait-empty").hidden = measured.length > 0;
           window.GaitWatchMap.renderLocations(ordered);
+        }
+
+        function initializeActivityControls() {
+          const weightInput = document.getElementById("body-weight");
+          const stepLengthInput = document.getElementById("step-length");
+          const resetButton = document.getElementById("reset-steps-button");
+          const controlTokenInput = document.getElementById("device-control-token");
+          const resetStatus = document.getElementById("reset-status");
+          controlTokenInput.value =
+            sessionStorage.getItem("gaitwatch-phone-location-token") || "";
+          controlTokenInput.addEventListener("input", function () {
+            document.getElementById("phone-location-token").value =
+              controlTokenInput.value;
+          });
+          weightInput.value =
+            localStorage.getItem("gaitwatch-weight-kg") || weightInput.value;
+          stepLengthInput.value =
+            localStorage.getItem("gaitwatch-step-length-cm") ||
+            stepLengthInput.value;
+
+          function saveEstimateSettings() {
+            const weightKg = Number(weightInput.value);
+            const stepLengthCm = Number(stepLengthInput.value);
+            if (Number.isFinite(weightKg) && weightKg >= 20 && weightKg <= 300) {
+              localStorage.setItem("gaitwatch-weight-kg", String(weightKg));
+            }
+            if (
+              Number.isFinite(stepLengthCm) &&
+              stepLengthCm >= 20 &&
+              stepLengthCm <= 150
+            ) {
+              localStorage.setItem(
+                "gaitwatch-step-length-cm",
+                String(stepLengthCm)
+              );
+            }
+            updateStats(lastTelemetryRecords);
+          }
+
+          weightInput.addEventListener("change", saveEstimateSettings);
+          stepLengthInput.addEventListener("change", saveEstimateSettings);
+          resetButton.addEventListener("click", async function () {
+            if (
+              !window.confirm(
+                "Reset bộ đếm trên ESP32 về 0 và bắt đầu phiên mới? Lịch sử đã lưu sẽ không bị xóa."
+              )
+            ) {
+              return;
+            }
+            const token = controlTokenInput.value.trim();
+            if (!token) {
+              resetStatus.textContent =
+                "Nhập PHONE_LOCATION_TOKEN đã cấu hình trên Render để xác nhận reset.";
+              return;
+            }
+
+            resetButton.disabled = true;
+            resetStatus.textContent = "Đang gửi lệnh reset đến máy chủ...";
+            try {
+              const response = await fetch("/api/device/steps/reset", {
+                method: "POST",
+                headers: {
+                  Accept: "application/json",
+                  Authorization: "Bearer " + token,
+                },
+              });
+              const result = await response.json();
+              if (!response.ok) {
+                throw new Error(result.detail || "Không thể gửi lệnh reset.");
+              }
+              sessionStorage.setItem("gaitwatch-phone-location-token", token);
+              document.getElementById("phone-location-token").value = token;
+              resetPendingSince = Date.now();
+              resetStatus.textContent =
+                "Đã gửi lệnh. ESP32 sẽ reset khi kết nối mạng; chờ số bước về 0.";
+              updateStats(lastTelemetryRecords);
+              loadTelemetry();
+            } catch (error) {
+              resetStatus.textContent =
+                error.message || "Không thể gửi lệnh reset.";
+            } finally {
+              resetButton.disabled = false;
+            }
+          });
         }
 
         async function loadTelemetry() {
@@ -1274,6 +1490,7 @@
             window.GaitWatchMap.initialize();
           }
           window.GaitWatchPhoneLocation.initialize();
+          initializeActivityControls();
           if (!createCharts()) {
             return;
           }

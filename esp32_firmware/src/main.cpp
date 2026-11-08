@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -19,6 +20,8 @@ StepCounter stepCounter;
 FallDetector fallDetector;
 WiFiTracker wifiTracker;
 WiFiSetupPortal wifiSetupPortal;
+Preferences resetPreferences;
+bool resetPreferencesReady = false;
 
 struct StepTelemetrySnapshot {
     uint32_t steps;
@@ -37,6 +40,7 @@ bool imuInitialized = false;
 volatile bool wifiRetryPending = false;
 volatile bool wifiDisconnectedEventPending = false;
 volatile bool wifiGotIpEventPending = false;
+volatile bool stepCounterResetPending = false;
 volatile uint8_t wifiDisconnectReason = 0;
 
 void stepTelemetryTask(void* parameter);
@@ -63,6 +67,10 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
     pinMode(BUTTON_PIN, INPUT_PULLUP);
+    resetPreferencesReady = resetPreferences.begin("gaitwatch", false);
+    if (!resetPreferencesReady) {
+        Serial.println("[RESET] Could not open persistent reset state.");
+    }
 
     imuInitialized = imu.begin();
     if (imuInitialized) {
@@ -212,19 +220,94 @@ bool sendStepUpdateToBackend(const StepTelemetrySnapshot& snapshot)
     return true;
 }
 
+bool readStepResetRevision(uint32_t& revision)
+{
+    if (WiFi.status() != WL_CONNECTED) {
+        return false;
+    }
+
+    HTTPClient http;
+    http.setTimeout(3000);
+    const String endpoint = String(SERVER_URL) + "/api/device/reset-state";
+    if (!http.begin(endpoint)) {
+        Serial.println("[RESET] Could not initialize reset-state request.");
+        return false;
+    }
+
+    const int statusCode = http.GET();
+    if (statusCode != HTTP_CODE_OK) {
+        Serial.printf("[RESET] Reset-state request returned HTTP %d.\n", statusCode);
+        http.end();
+        return false;
+    }
+
+    JsonDocument response;
+    const DeserializationError parseError = deserializeJson(response, http.getString());
+    http.end();
+    if (parseError || !response["reset_revision"].is<uint32_t>()) {
+        Serial.println("[RESET] Could not parse the reset-state response.");
+        return false;
+    }
+
+    revision = response["reset_revision"].as<uint32_t>();
+    return true;
+}
+
+void pollStepResetCommand(uint32_t& lastResetRevision, bool& resetRevisionKnown)
+{
+    uint32_t revision = 0;
+    if (!readStepResetRevision(revision)) {
+        return;
+    }
+
+    if (!resetRevisionKnown) {
+        resetRevisionKnown = true;
+        if (resetPreferencesReady &&
+            resetPreferences.putUInt("reset_revision", revision) == 0) {
+            Serial.println("[RESET] Could not persist initial reset revision.");
+        }
+        lastResetRevision = revision;
+    } else if (revision != lastResetRevision) {
+        lastResetRevision = revision;
+        stepCounterResetPending = true;
+        if (resetPreferencesReady &&
+            resetPreferences.putUInt("reset_revision", revision) == 0) {
+            Serial.println("[RESET] Could not persist reset revision.");
+        }
+        Serial.println("[RESET] Dashboard requested a step counter reset.");
+    }
+}
+
 void stepTelemetryTask(void*)
 {
     StepTelemetrySnapshot snapshot{};
+    uint32_t lastResetRevision =
+        resetPreferencesReady ? resetPreferences.getUInt("reset_revision", 0) : 0;
+    bool resetRevisionKnown =
+        resetPreferencesReady && resetPreferences.isKey("reset_revision");
+    unsigned long lastResetPoll = 0;
     for (;;) {
-        if (xQueueReceive(stepTelemetryQueue, &snapshot, portMAX_DELAY) != pdTRUE) {
-            continue;
+        const unsigned long now = millis();
+        if (WiFi.status() == WL_CONNECTED &&
+            now - lastResetPoll >= 3000UL) {
+            lastResetPoll = now;
+            pollStepResetCommand(lastResetRevision, resetRevisionKnown);
         }
 
-        while (!sendStepUpdateToBackend(snapshot)) {
-            StepTelemetrySnapshot latestSnapshot{};
-            if (xQueueReceive(stepTelemetryQueue, &latestSnapshot,
-                              pdMS_TO_TICKS(1000)) == pdTRUE) {
-                snapshot = latestSnapshot;
+        if (xQueueReceive(stepTelemetryQueue, &snapshot,
+                          pdMS_TO_TICKS(1000)) == pdTRUE) {
+            while (!sendStepUpdateToBackend(snapshot)) {
+                const unsigned long retryNow = millis();
+                if (WiFi.status() == WL_CONNECTED &&
+                    retryNow - lastResetPoll >= 3000UL) {
+                    lastResetPoll = retryNow;
+                    pollStepResetCommand(lastResetRevision, resetRevisionKnown);
+                }
+                StepTelemetrySnapshot latestSnapshot{};
+                if (xQueueReceive(stepTelemetryQueue, &latestSnapshot,
+                                  pdMS_TO_TICKS(1000)) == pdTRUE) {
+                    snapshot = latestSnapshot;
+                }
             }
         }
     }
@@ -253,6 +336,19 @@ void loop() {
         lastWiFiAttempt = now;
         wifiConnectionStartedAt = now;
         wifiRetryPending = false;
+    }
+
+    if (stepCounterResetPending) {
+        stepCounterResetPending = false;
+        stepCounter.reset();
+        lastReportedStepCount = 0;
+        Serial.println("[RESET] Step counter reset by dashboard.");
+        if (stepTelemetryQueue != nullptr) {
+            StepTelemetrySnapshot snapshot{};
+            if (xQueueOverwrite(stepTelemetryQueue, &snapshot) != pdPASS) {
+                Serial.println("[RESET] Could not queue the reset count update.");
+            }
+        }
     }
 
     if (wifiRetryPending &&
