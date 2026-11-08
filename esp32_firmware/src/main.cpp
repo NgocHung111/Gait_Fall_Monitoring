@@ -19,6 +19,8 @@ bool isAlerting = false;
 unsigned long alertStartTime = 0;
 unsigned long lastWiFiAttempt = 0;
 unsigned long lastSensorLogTime = 0;
+unsigned long lastTelemetryAttempt = 0;
+uint32_t lastReportedStepCount = 0;
 bool imuInitialized = false;
 volatile bool wifiRetryPending = false;
 volatile bool wifiDisconnectedEventPending = false;
@@ -63,6 +65,7 @@ void setup() {
     } else {
         Serial.println("Wi-Fi credentials are placeholders; configure them in config.h.");
     }
+    lastTelemetryAttempt = millis();
 }
 
 bool buttonPressed(unsigned long now)
@@ -83,32 +86,24 @@ bool buttonPressed(unsigned long now)
     return false;
 }
 
-bool sendAlertToBackend()
+bool postTelemetry(JsonDocument& doc, const char* description,
+                   unsigned long timeoutMs, String& responseBody)
 {
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("ERROR: Cannot send fall alert; Wi-Fi is not connected.");
+        Serial.printf("ERROR: Cannot send %s; Wi-Fi is not connected.\n", description);
         return false;
-    }
-
-    JsonDocument doc;
-    doc["event"] = "FALL_DETECTED";
-    doc["steps"] = stepCounter.getStepCount();
-    doc["uptime_ms"] = millis();
-    JsonObject wifiData = doc["wifi_data"].to<JsonObject>();
-    if (!wifiTracker.scanNetworks(wifiData)) {
-        Serial.println("WARNING: Wi-Fi scan failed; sending the alert without access points.");
     }
 
     String payload;
     serializeJson(doc, payload);
-    Serial.println("[HTTP] JSON payload:");
+    Serial.printf("[HTTP] %s JSON payload:\n", description);
     Serial.println(payload);
 
     const String endpoint = String(SERVER_URL) + "/api/telemetry";
     Serial.printf("[HTTP] POST %s\n", endpoint.c_str());
 
     HTTPClient http;
-    http.setTimeout(65000);
+    http.setTimeout(timeoutMs);
     if (!http.begin(endpoint)) {
         Serial.println("ERROR: Could not initialize HTTP connection.");
         return false;
@@ -121,7 +116,6 @@ bool sendAlertToBackend()
     Serial.printf("[HTTP] Response code: %d; response time: %lu ms.\n",
                   statusCode, responseTimeMs);
 
-    String responseBody;
     if (statusCode > 0) {
         responseBody = http.getString();
         Serial.println("[HTTP] Backend response:");
@@ -133,7 +127,39 @@ bool sendAlertToBackend()
     http.end();
 
     if (statusCode != HTTP_CODE_OK) {
-        Serial.printf("ERROR: Backend returned HTTP status %d.\n", statusCode);
+        Serial.printf("ERROR: Backend returned HTTP status %d for %s.\n",
+                      statusCode, description);
+        return false;
+    }
+
+    return true;
+}
+
+void addRecentStepIntervals(JsonDocument& doc)
+{
+    uint32_t intervals[10];
+    const uint8_t intervalCount =
+        stepCounter.getRecentStepIntervals(intervals, 10);
+    JsonArray intervalArray = doc["step_intervals_ms"].to<JsonArray>();
+    for (uint8_t i = 0; i < intervalCount; i++) {
+        intervalArray.add(intervals[i]);
+    }
+}
+
+bool sendAlertToBackend()
+{
+    JsonDocument doc;
+    doc["event"] = "FALL_DETECTED";
+    doc["steps"] = stepCounter.getStepCount();
+    doc["uptime_ms"] = millis();
+    addRecentStepIntervals(doc);
+    JsonObject wifiData = doc["wifi_data"].to<JsonObject>();
+    if (!wifiTracker.scanNetworks(wifiData)) {
+        Serial.println("WARNING: Wi-Fi scan failed; sending the alert without access points.");
+    }
+
+    String responseBody;
+    if (!postTelemetry(doc, "fall alert", 65000, responseBody)) {
         return false;
     }
 
@@ -151,6 +177,24 @@ bool sendAlertToBackend()
         Serial.println(
             "[TELEGRAM] Backend returned HTTP 200, but did not confirm Telegram delivery.");
     }
+    return true;
+}
+
+bool sendStepUpdateToBackend()
+{
+    JsonDocument doc;
+    doc["event"] = "STEP_UPDATE";
+    doc["steps"] = stepCounter.getStepCount();
+    doc["uptime_ms"] = millis();
+    addRecentStepIntervals(doc);
+
+    String responseBody;
+    if (!postTelemetry(doc, "step update", 20000, responseBody)) {
+        return false;
+    }
+
+    Serial.printf("[TELEMETRY] Step update accepted by backend: %lu steps.\n",
+                  static_cast<unsigned long>(stepCounter.getStepCount()));
     return true;
 }
 
@@ -227,9 +271,21 @@ void loop() {
                 "va gui request POST den Backend %s.\n",
                 SERVER_URL);
             digitalWrite(BUZZER_PIN, LOW);
-            sendAlertToBackend();
+            if (sendAlertToBackend()) {
+                lastReportedStepCount = stepCounter.getStepCount();
+            }
+            lastTelemetryAttempt = millis();
             isAlerting = false;
             fallDetector.reset();
+        }
+    }
+
+    if (!isAlerting &&
+        now - lastTelemetryAttempt >= TELEMETRY_INTERVAL_MS &&
+        stepCounter.getStepCount() > lastReportedStepCount) {
+        lastTelemetryAttempt = now;
+        if (sendStepUpdateToBackend()) {
+            lastReportedStepCount = stepCounter.getStepCount();
         }
     }
 

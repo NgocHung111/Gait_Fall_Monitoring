@@ -62,18 +62,23 @@ regularly. The dashboard and history endpoint are publicly reachable at the
 Render URL: do not send real health/location data until you have added suitable
 access control for the people who should see it.
 
-The current firmware posts telemetry when a fall alert is not canceled; it
-does not yet upload continuous IMU samples or step timestamps. PostgreSQL
-therefore preserves received alert records, not a full daily activity history.
+The firmware posts a step-count update every 10 seconds while the count has
+changed, as well as a separate record when a fall alert is not canceled. It
+does not upload continuous IMU samples. Step updates include recent step
+intervals so the backend can calculate cadence and gait variability.
+PostgreSQL preserves these telemetry records, not a full daily activity history.
 
 The backend serves the frontend on the same origin in production, avoiding a
 separate CORS/domain setup. Local CORS defaults permit the development frontend.
 
 `POST /api/telemetry` accepts the ESP32 payload fields `event`, `steps`,
-`uptime_ms`, and `wifi_data.wifiAccessPoints`. To calculate gait metrics, also
-send either `step_timestamps_ms` or `step_intervals_ms`. Timestamps and intervals
-are in milliseconds. If step timing is absent, gait metrics are returned as
-`null`; aggregate step counts alone cannot determine cadence or variability.
+`uptime_ms`, and `wifi_data.wifiAccessPoints`. Step updates use the
+`STEP_UPDATE` event and do not trigger Telegram alerts; `FALL_DETECTED` records
+retain the fall notification and location behavior. To calculate gait metrics,
+send either `step_timestamps_ms` or `step_intervals_ms`. Timestamps and
+intervals are in milliseconds. If step timing is absent, gait metrics are
+returned as `null`; aggregate step counts alone cannot determine cadence or
+variability.
 
 `GET /api/telemetry/history?limit=250` returns up to 250 recent telemetry records
 for the dashboard. When `DATABASE_URL` is configured, records are stored in
