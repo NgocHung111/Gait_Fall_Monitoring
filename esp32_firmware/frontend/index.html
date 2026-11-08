@@ -391,6 +391,40 @@
         font-size: 10px;
       }
       .activity-controls-note { color: #98a3b2; font-size: 9px; }
+      .alert-contacts-panel { margin: 18px 0; }
+      .alert-contacts-help, #contacts-status { color: #8793a5; font-size: 10px; }
+      .contacts-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+      .contacts-form input {
+        min-width: 150px;
+        padding: 8px 9px;
+        border: 1px solid #dfe5ef;
+        border-radius: 6px;
+        color: #34425a;
+        font: inherit;
+        font-size: 10px;
+      }
+      .contacts-form button, .contacts-table button, #contacts-refresh {
+        padding: 8px 10px;
+        border: 1px solid #dfe5ef;
+        border-radius: 6px;
+        color: #53647d;
+        background: white;
+        font: inherit;
+        font-size: 10px;
+        cursor: pointer;
+      }
+      .contacts-form button { border-color: #d7e8e2; color: #258d6d; }
+      .contacts-form button:disabled, .contacts-table button:disabled { opacity: .6; cursor: default; }
+      .contacts-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+      .contacts-table th, .contacts-table td { padding: 9px 10px; border-bottom: 1px solid #eef1f5; text-align: left; }
+      .contacts-table th { color: #8793a5; background: #f9fafc; font-weight: 600; }
+      .contacts-table td { color: #59677d; }
+      .contacts-table .contact-active { color: #258d6d; }
+      .contacts-table .contact-inactive { color: #a56d29; }
+      .contacts-table .contact-actions { display: flex; gap: 6px; white-space: nowrap; }
+      .contacts-table .contact-delete { border-color: #f1d8d5; color: #b75e56; }
+      .contacts-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+      .contacts-empty { padding: 14px; color: #98a3b2; text-align: center; }
       #reset-steps-button {
         padding: 8px 11px;
         border: 1px solid #f1d8d5;
@@ -689,6 +723,9 @@
         .period-chip { padding: 6px 7px; font-size: 8px; }
         .fall-history-scroll { max-height: 220px; }
         .fall-history-table { min-width: 470px; }
+        .contacts-table { min-width: 440px; }
+        .contacts-form { align-items: stretch; flex-direction: column; }
+        .contacts-form input, .contacts-form button { width: 100%; }
         .chart-wrap { height: 205px; margin-top: 12px; }
         .gait-legend { gap: 8px; font-size: 8px; }
         .map-frame { height: 205px; }
@@ -968,6 +1005,33 @@
                 </tbody>
               </table>
             </div>
+          </div>
+        </section>
+
+        <section class="panel alert-contacts-panel" id="alert-contacts-section" aria-labelledby="alert-contacts-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">LIÊN HỆ KHẨN CẤP</p>
+              <h2 id="alert-contacts-title">Danh sách người nhận cảnh báo Telegram</h2>
+              <p class="panel-subtitle">Người nhận đang bật sẽ nhận thông báo khi phát hiện té ngã. Dùng mã bảo mật Render ở thanh cấu hình phía trên.</p>
+            </div>
+            <button id="contacts-refresh" type="button">Làm mới</button>
+          </div>
+          <form class="contacts-form" id="contact-add-form">
+            <input id="contact-name" type="text" maxlength="80" autocomplete="name" aria-label="Tên người thân" placeholder="Tên người thân" required>
+            <input id="contact-chat-id" type="text" maxlength="32" pattern="-?[0-9]+" inputmode="numeric" aria-label="Telegram Chat ID" placeholder="Telegram Chat ID" required>
+            <button id="contact-add-button" type="submit">+ Thêm người nhận</button>
+          </form>
+          <p id="contacts-status" role="status" aria-live="polite">Nhập mã bảo mật Render ở thanh cấu hình, sau đó chọn “Làm mới”.</p>
+          <div class="contacts-table-wrap">
+            <table class="contacts-table">
+              <thead>
+                <tr><th>Tên người thân</th><th>Telegram Chat ID</th><th>Trạng thái</th><th>Thao tác</th></tr>
+              </thead>
+              <tbody id="contacts-list">
+                <tr><td class="contacts-empty" colspan="4">Chưa tải danh sách người nhận.</td></tr>
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -1335,6 +1399,7 @@
         "use strict";
 
         const HISTORY_URL = "/api/telemetry/history";
+        const CONTACTS_URL = "/api/contacts";
         const POLL_INTERVAL_MS = 1000;
         const numberFormat = new Intl.NumberFormat("vi-VN");
         let stepsChart;
@@ -1343,6 +1408,7 @@
         let lastTelemetryRecords = [];
         let historyLoaded = false;
         let resetPendingSince = null;
+        let alertContacts = [];
 
         function formatMetric(value, digits) {
           if (
@@ -1662,6 +1728,154 @@
           });
         }
 
+        async function requestContacts(url, options) {
+          const token = document.getElementById("device-control-token").value.trim();
+          if (!token) {
+            throw new Error("Nhập mã bảo mật Render ở thanh cấu hình phía trên.");
+          }
+          const response = await fetch(url, {
+            ...options,
+            headers: {
+              Accept: "application/json",
+              Authorization: "Bearer " + token,
+              ...(options && options.headers),
+            },
+          });
+          if (!response.ok) {
+            let detail = "Không thể quản lý danh sách người nhận.";
+            try {
+              const result = await response.json();
+              detail = result.detail || detail;
+            } catch (error) {
+              if (!(error instanceof SyntaxError)) {
+                throw error;
+              }
+            }
+            throw new Error(detail);
+          }
+          return response.status === 204 ? null : response.json();
+        }
+
+        function renderAlertContacts() {
+          const body = document.getElementById("contacts-list");
+          body.replaceChildren();
+          if (!alertContacts.length) {
+            const row = body.insertRow();
+            const cell = row.insertCell();
+            cell.colSpan = 4;
+            cell.className = "contacts-empty";
+            cell.textContent = "Chưa có người nhận cảnh báo.";
+            return;
+          }
+
+          alertContacts.forEach(function (contact) {
+            const row = body.insertRow();
+            row.insertCell().textContent = contact.name;
+            row.insertCell().textContent = contact.chat_id;
+            const statusCell = row.insertCell();
+            statusCell.textContent = contact.active ? "Đang bật" : "Tắt";
+            statusCell.className = contact.active
+              ? "contact-active"
+              : "contact-inactive";
+            const actionsCell = row.insertCell();
+            actionsCell.className = "contact-actions";
+
+            const toggleButton = document.createElement("button");
+            toggleButton.type = "button";
+            toggleButton.textContent = contact.active ? "Tắt" : "Bật";
+            toggleButton.addEventListener("click", async function () {
+              toggleButton.disabled = true;
+              try {
+                await requestContacts(CONTACTS_URL + "/" + contact.id, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ active: !contact.active }),
+                });
+                await loadAlertContacts();
+              } catch (error) {
+                document.getElementById("contacts-status").textContent =
+                  error.message || "Không thể cập nhật trạng thái người nhận.";
+              } finally {
+                toggleButton.disabled = false;
+              }
+            });
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "contact-delete";
+            deleteButton.textContent = "Xóa";
+            deleteButton.addEventListener("click", async function () {
+              if (!window.confirm("Xóa người nhận " + contact.name + "?")) {
+                return;
+              }
+              deleteButton.disabled = true;
+              try {
+                await requestContacts(CONTACTS_URL + "/" + contact.id, {
+                  method: "DELETE",
+                });
+                await loadAlertContacts();
+              } catch (error) {
+                document.getElementById("contacts-status").textContent =
+                  error.message || "Không thể xóa người nhận.";
+              } finally {
+                deleteButton.disabled = false;
+              }
+            });
+            actionsCell.append(toggleButton, deleteButton);
+          });
+        }
+
+        async function loadAlertContacts() {
+          const status = document.getElementById("contacts-status");
+          try {
+            alertContacts = await requestContacts(CONTACTS_URL, { method: "GET" });
+            renderAlertContacts();
+            status.textContent =
+              alertContacts.length + " người nhận · " +
+              alertContacts.filter(function (contact) {
+                return contact.active;
+              }).length +
+              " đang bật.";
+          } catch (error) {
+            status.textContent =
+              error.message || "Không thể tải danh sách người nhận.";
+          }
+        }
+
+        function initializeAlertContacts() {
+          document
+            .getElementById("contacts-refresh")
+            .addEventListener("click", loadAlertContacts);
+          document
+            .getElementById("contact-add-form")
+            .addEventListener("submit", async function (event) {
+              event.preventDefault();
+              const nameInput = document.getElementById("contact-name");
+              const chatIdInput = document.getElementById("contact-chat-id");
+              const submitButton = document.getElementById("contact-add-button");
+              submitButton.disabled = true;
+              try {
+                await requestContacts(CONTACTS_URL, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    name: nameInput.value.trim(),
+                    chat_id: chatIdInput.value.trim(),
+                  }),
+                });
+                nameInput.value = "";
+                chatIdInput.value = "";
+                await loadAlertContacts();
+              } catch (error) {
+                document.getElementById("contacts-status").textContent =
+                  error.message || "Không thể thêm người nhận.";
+              } finally {
+                submitButton.disabled = false;
+              }
+            });
+          loadAlertContacts();
+        }
+
         async function loadTelemetry() {
           if (polling) {
             return;
@@ -1864,6 +2078,7 @@
           }
           window.GaitWatchPhoneLocation.initialize();
           initializeActivityControls();
+          initializeAlertContacts();
           if (!createCharts()) {
             return;
           }

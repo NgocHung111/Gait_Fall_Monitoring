@@ -1,6 +1,8 @@
 import hmac
 import logging
 import os
+import re
+import threading
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -49,6 +51,22 @@ class PhoneLocationUpdate(BaseModel):
 
 class StepResetState(BaseModel):
     reset_revision: int = Field(ge=0)
+
+
+class AlertContactCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    chat_id: str = Field(min_length=1, max_length=32, pattern=r"^-?\d+$")
+
+
+class AlertContact(BaseModel):
+    id: int = Field(ge=1)
+    name: str
+    chat_id: str
+    active: bool
+
+
+class AlertContactStatus(BaseModel):
+    active: bool
 
 
 class TelemetryResponse(BaseModel):
@@ -119,6 +137,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 ON CONFLICT (id) DO NOTHING
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_contacts (
+                    id BIGSERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    chat_id TEXT NOT NULL UNIQUE,
+                    active BOOLEAN NOT NULL DEFAULT TRUE
+                )
+                """
+            )
     else:
         logger.warning(
             "DATABASE_URL is not configured; telemetry history is in memory only."
@@ -139,12 +167,148 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Accept", "Authorization", "Content-Type"],
 )
 telemetry_history: deque[TelemetryHistoryItem] = deque(maxlen=LOCAL_HISTORY_LIMIT)
 latest_phone_location: PhoneLocationUpdate | None = None
 step_reset_revision = 0
+alert_contacts: list[AlertContact] = []
+next_alert_contact_id = 1
+alert_contacts_lock = threading.Lock()
+
+
+def _read_alert_contacts() -> list[AlertContact]:
+    if not DATABASE_URL:
+        with alert_contacts_lock:
+            return list(alert_contacts)
+
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, name, chat_id, active
+                FROM alert_contacts
+                ORDER BY id
+                """
+            ).fetchall()
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not read alert contacts.") from exc
+    return [
+        AlertContact(id=row[0], name=row[1], chat_id=row[2], active=row[3])
+        for row in rows
+    ]
+
+
+def _create_alert_contact(contact: AlertContactCreate) -> AlertContact:
+    global next_alert_contact_id
+    normalized_name = contact.name.strip()
+    normalized_chat_id = contact.chat_id.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=422, detail="Contact name cannot be blank.")
+    if not re.fullmatch(r"-?\d{1,32}", normalized_chat_id):
+        raise HTTPException(status_code=422, detail="Chat ID must be numeric.")
+
+    if not DATABASE_URL:
+        global alert_contacts
+        with alert_contacts_lock:
+            if any(item.chat_id == normalized_chat_id for item in alert_contacts):
+                raise HTTPException(status_code=409, detail="Chat ID already exists.")
+            created = AlertContact(
+                id=next_alert_contact_id,
+                name=normalized_name,
+                chat_id=normalized_chat_id,
+                active=True,
+            )
+            next_alert_contact_id += 1
+            alert_contacts.append(created)
+            return created
+
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                """
+                INSERT INTO alert_contacts (name, chat_id, active)
+                VALUES (%s, %s, TRUE)
+                RETURNING id, name, chat_id, active
+                """,
+                (normalized_name, normalized_chat_id),
+            ).fetchone()
+    except psycopg.errors.UniqueViolation as exc:
+        raise HTTPException(status_code=409, detail="Chat ID already exists.") from exc
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not create alert contact.") from exc
+    return AlertContact(id=row[0], name=row[1], chat_id=row[2], active=row[3])
+
+
+def _set_alert_contact_active(contact_id: int, active: bool) -> AlertContact:
+    if not DATABASE_URL:
+        with alert_contacts_lock:
+            for index, contact in enumerate(alert_contacts):
+                if contact.id == contact_id:
+                    updated = contact.model_copy(update={"active": active})
+                    alert_contacts[index] = updated
+                    return updated
+        raise HTTPException(status_code=404, detail="Alert contact not found.")
+
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                """
+                UPDATE alert_contacts
+                SET active = %s
+                WHERE id = %s
+                RETURNING id, name, chat_id, active
+                """,
+                (active, contact_id),
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not update alert contact.") from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Alert contact not found.")
+    return AlertContact(id=row[0], name=row[1], chat_id=row[2], active=row[3])
+
+
+def _delete_alert_contact(contact_id: int) -> None:
+    global alert_contacts
+    if not DATABASE_URL:
+        with alert_contacts_lock:
+            for index, contact in enumerate(alert_contacts):
+                if contact.id == contact_id:
+                    del alert_contacts[index]
+                    return
+        raise HTTPException(status_code=404, detail="Alert contact not found.")
+
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            result = connection.execute(
+                "DELETE FROM alert_contacts WHERE id = %s", (contact_id,)
+            )
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not delete alert contact.") from exc
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Alert contact not found.")
+
+
+def _require_contact_management_token(authorization: str | None) -> None:
+    if not PHONE_LOCATION_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Configure PHONE_LOCATION_TOKEN on the server to manage contacts.",
+        )
+    expected_authorization = f"Bearer {PHONE_LOCATION_TOKEN}"
+    if authorization is None or not hmac.compare_digest(
+        authorization.encode("utf-8"), expected_authorization.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Invalid dashboard control token.")
 
 
 def _read_telemetry_history(
@@ -331,6 +495,66 @@ def health_check() -> dict[str, str]:
     return {"status": "ok", "storage": "postgres" if DATABASE_URL else "memory"}
 
 
+@app.get("/api/contacts", response_model=list[AlertContact])
+def get_alert_contacts(
+    authorization: str | None = Header(default=None),
+) -> list[AlertContact]:
+    _require_contact_management_token(authorization)
+    try:
+        return _read_alert_contacts()
+    except TelemetryStorageError as exc:
+        logger.exception("Could not read alert contacts.")
+        raise HTTPException(
+            status_code=503, detail="Alert contact storage is temporarily unavailable."
+        ) from exc
+
+
+@app.post("/api/contacts", response_model=AlertContact, status_code=201)
+def add_alert_contact(
+    contact: AlertContactCreate,
+    authorization: str | None = Header(default=None),
+) -> AlertContact:
+    _require_contact_management_token(authorization)
+    try:
+        return _create_alert_contact(contact)
+    except TelemetryStorageError as exc:
+        logger.exception("Could not create alert contact.")
+        raise HTTPException(
+            status_code=503, detail="Alert contact storage is temporarily unavailable."
+        ) from exc
+
+
+@app.patch("/api/contacts/{contact_id}", response_model=AlertContact)
+def update_alert_contact(
+    contact_id: int,
+    update: AlertContactStatus,
+    authorization: str | None = Header(default=None),
+) -> AlertContact:
+    _require_contact_management_token(authorization)
+    try:
+        return _set_alert_contact_active(contact_id, update.active)
+    except TelemetryStorageError as exc:
+        logger.exception("Could not update alert contact.")
+        raise HTTPException(
+            status_code=503, detail="Alert contact storage is temporarily unavailable."
+        ) from exc
+
+
+@app.delete("/api/contacts/{contact_id}", status_code=204)
+def remove_alert_contact(
+    contact_id: int,
+    authorization: str | None = Header(default=None),
+) -> None:
+    _require_contact_management_token(authorization)
+    try:
+        _delete_alert_contact(contact_id)
+    except TelemetryStorageError as exc:
+        logger.exception("Could not delete alert contact.")
+        raise HTTPException(
+            status_code=503, detail="Alert contact storage is temporarily unavailable."
+        ) from exc
+
+
 @app.get("/api/telemetry/history", response_model=list[TelemetryHistoryItem])
 def get_telemetry_history(
     limit: int = 250,
@@ -496,16 +720,46 @@ def receive_telemetry(telemetry: Telemetry) -> TelemetryResponse:
                 location_error = f"{phone_location_error} {location_error}"
 
         try:
-            send_emergency_message(
-                bot_token=settings.telegram_bot_token.get_secret_value(),
-                chat_id=settings.telegram_chat_id,
-                latitude=location["lat"] if location else None,
-                longitude=location["lng"] if location else None,
-                steps=telemetry.steps,
+            active_contacts = [
+                contact for contact in _read_alert_contacts() if contact.active
+            ]
+        except TelemetryStorageError as exc:
+            logger.exception("Could not load active alert contacts for a fall.")
+            raise HTTPException(
+                status_code=503,
+                detail="Alert contact storage is temporarily unavailable.",
+            ) from exc
+
+        recipient_chat_ids = list(
+            dict.fromkeys(
+                chat_id
+                for chat_id in [settings.telegram_chat_id]
+                + [contact.chat_id for contact in active_contacts]
+                if chat_id
             )
-        except TelegramError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        telegram_sent = True
+        )
+        if not recipient_chat_ids:
+            recipient_chat_ids = [settings.telegram_chat_id]
+
+        delivery_failed = False
+        for chat_id in recipient_chat_ids:
+            try:
+                send_emergency_message(
+                    bot_token=settings.telegram_bot_token.get_secret_value(),
+                    chat_id=chat_id,
+                    latitude=location["lat"] if location else None,
+                    longitude=location["lng"] if location else None,
+                    steps=telemetry.steps,
+                )
+            except TelegramError:
+                logger.exception("Telegram fall alert delivery failed.")
+                delivery_failed = True
+        if delivery_failed:
+            raise HTTPException(
+                status_code=502,
+                detail="Telegram alert delivery failed for one or more recipients.",
+            )
+        telegram_sent = bool(recipient_chat_ids)
 
     response = TelemetryResponse(
         received=True,

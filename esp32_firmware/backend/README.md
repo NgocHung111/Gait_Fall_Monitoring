@@ -22,7 +22,7 @@ corresponding integrations:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 - `GOOGLE_GEOLOCATION_API_KEY`
-- `PHONE_LOCATION_TOKEN` (optional bearer token for phone GPS updates)
+- `PHONE_LOCATION_TOKEN` (bearer token for phone GPS, step reset, and contact management)
 - `DATABASE_URL` (PostgreSQL connection URL; without it, history is in memory)
 
 `.env.example` lists the variable names only. Do not commit a real `.env` file
@@ -102,6 +102,22 @@ revisioned command; it does not delete telemetry history. The ESP32 polls for
 the command while online and then resets its step counter and gait intervals.
 The dashboard may take a few seconds to show zero. If the device is offline,
 the command is applied after it reconnects.
+
+### Telegram family alert contacts
+
+The dashboard's **Danh sách người nhận cảnh báo Telegram** manager uses the
+same `PHONE_LOCATION_TOKEN` entered in the dashboard's control-token field.
+Contact list and mutation endpoints require that bearer token. Contacts are
+stored in PostgreSQL when `DATABASE_URL` is configured; without PostgreSQL,
+the local in-memory list is cleared when the backend restarts. On a confirmed
+fall, Telegram alerts go to every active contact and the legacy
+`TELEGRAM_CHAT_ID` recipient, with duplicate chat IDs sent only once. Use each
+recipient's numeric Telegram Chat ID; the recipient must have started a
+conversation with the bot so Telegram can deliver the alert.
+
+The API provides `GET`/`POST /api/contacts`, `PATCH /api/contacts/{id}` to
+change its `active` state, and `DELETE /api/contacts/{id}`. All require
+`Authorization: Bearer <PHONE_LOCATION_TOKEN>`.
 
 The firmware queues a step-count update as soon as it detects a new step, as
 well as a separate record when a fall alert is not canceled. Network posting

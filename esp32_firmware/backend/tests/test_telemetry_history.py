@@ -1,10 +1,14 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
 from app.main import (
+    AlertContact,
+    AlertContactCreate,
+    AlertContactStatus,
     PHONE_LOCATION_MAX_AGE_SECONDS,
     PhoneLocationUpdate,
     StepResetState,
@@ -12,11 +16,15 @@ from app.main import (
     TelemetryHistoryItem,
     _read_telemetry_history,
     _store_telemetry_record,
+    add_alert_contact,
+    get_alert_contacts,
     get_telemetry_history,
     get_device_reset_state,
+    remove_alert_contact,
     receive_telemetry,
     reset_device_steps,
     telemetry_history,
+    update_alert_contact,
     update_phone_location,
 )
 from app.services.gait_analysis import GaitMetrics
@@ -26,9 +34,19 @@ class TelemetryHistoryTests(unittest.TestCase):
     def setUp(self) -> None:
         telemetry_history.clear()
         self._reset_step_revision()
+        self._reset_alert_contacts()
         self.addCleanup(self._clear_phone_location)
+        self.addCleanup(self._reset_alert_contacts)
         self.addCleanup(telemetry_history.clear)
         self.addCleanup(self._reset_step_revision)
+
+    @staticmethod
+    def _reset_alert_contacts() -> None:
+        import app.main
+
+        with app.main.alert_contacts_lock:
+            app.main.alert_contacts.clear()
+            app.main.next_alert_contact_id = 1
 
     @staticmethod
     def _reset_step_revision() -> None:
@@ -98,6 +116,84 @@ class TelemetryHistoryTests(unittest.TestCase):
         self.assertEqual(history[0].rssi_dbm, -63)
         self.assertEqual(history[0].wifi_ssid, "Home_WiFi")
         self.assertEqual(history[0].battery_percent, 82)
+
+    def test_contact_management_requires_control_token(self) -> None:
+        with (
+            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
+            patch("app.main.DATABASE_URL", ""),
+        ):
+            with self.assertRaises(HTTPException) as error:
+                get_alert_contacts(authorization=None)
+        self.assertEqual(error.exception.status_code, 401)
+
+    def test_contacts_can_be_added_toggled_listed_and_deleted(self) -> None:
+        with (
+            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
+            patch("app.main.DATABASE_URL", ""),
+        ):
+            contact = add_alert_contact(
+                AlertContactCreate(name="  Alex  ", chat_id="123456"),
+                authorization="Bearer test-token",
+            )
+            listed = get_alert_contacts(authorization="Bearer test-token")
+            disabled = update_alert_contact(
+                contact.id,
+                AlertContactStatus(active=False),
+                authorization="Bearer test-token",
+            )
+            remove_alert_contact(
+                contact.id, authorization="Bearer test-token"
+            )
+            remaining = get_alert_contacts(authorization="Bearer test-token")
+
+        self.assertEqual(contact.name, "Alex")
+        self.assertTrue(listed[0].active)
+        self.assertFalse(disabled.active)
+        self.assertEqual(remaining, [])
+
+    def test_duplicate_contact_chat_id_is_rejected(self) -> None:
+        with (
+            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
+            patch("app.main.DATABASE_URL", ""),
+        ):
+            add_alert_contact(
+                AlertContactCreate(name="Alex", chat_id="123456"),
+                authorization="Bearer test-token",
+            )
+            with self.assertRaises(HTTPException) as error:
+                add_alert_contact(
+                    AlertContactCreate(name="Sam", chat_id="123456"),
+                    authorization="Bearer test-token",
+                )
+        self.assertEqual(error.exception.status_code, 409)
+
+    def test_fall_alert_sends_to_active_contacts_and_legacy_recipient(self) -> None:
+        import app.main
+
+        app.main.alert_contacts.extend(
+            [
+                AlertContact(id=1, name="Alex", chat_id="123456", active=True),
+                AlertContact(id=2, name="Sam", chat_id="654321", active=False),
+                AlertContact(id=3, name="Jordan", chat_id="789012", active=True),
+            ]
+        )
+        settings = SimpleNamespace(
+            telegram_bot_token=SimpleNamespace(get_secret_value=lambda: "bot-token"),
+            telegram_chat_id="123456",
+        )
+        with (
+            patch("app.main.settings", settings),
+            patch("app.main.send_emergency_message") as send_message,
+        ):
+            response = receive_telemetry(
+                Telemetry(event="FALL_DETECTED", steps=12)
+            )
+
+        self.assertTrue(response.telegram_sent)
+        self.assertEqual(
+            [call.kwargs["chat_id"] for call in send_message.call_args_list],
+            ["123456", "789012"],
+        )
 
     def test_phone_location_is_used_for_fall_and_telegram(self) -> None:
         timestamp = datetime.now(timezone.utc)
