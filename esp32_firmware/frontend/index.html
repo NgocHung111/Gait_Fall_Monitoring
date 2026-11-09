@@ -398,27 +398,25 @@
       .password-toggle {
         position: absolute;
         right: 4px;
-        display: grid;
+        display: flex;
         width: 30px;
         height: 30px;
-        place-items: center;
-        padding: 1px;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
         border: 1px solid #dfe5ef;
         border-radius: 6px;
         color: #738198;
         background: #f5f7fb;
         cursor: pointer;
+        opacity: .6;
+        transition: opacity 160ms ease, background-color 160ms ease;
       }
       .password-toggle svg {
-        width: 20px;
-        height: 20px;
-        animation: password-icon-appear 160ms ease-out;
+        width: 15px;
+        height: 15px;
       }
-      @keyframes password-icon-appear {
-        from { opacity: 0; transform: scale(.85); }
-        to { opacity: .7; transform: scale(1); }
-      }
-      .password-toggle:hover { background: #e9eef8; }
+      .password-toggle:hover { background: #e9eef8; opacity: 1; }
       .password-toggle:focus-visible { outline: 2px solid #5278f4; outline-offset: 1px; }
       .activity-controls-note { color: #98a3b2; font-size: 9px; }
       .alert-contacts-panel { margin: 18px 0; }
@@ -685,10 +683,18 @@
         cursor: pointer;
       }
       .phone-location-form button.password-toggle {
-        padding: 1px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
         border: 1px solid #dfe5ef;
         color: #738198;
         background: #f5f7fb;
+        opacity: .6;
+      }
+      .phone-location-form button.password-toggle:hover {
+        background: #e9eef8;
+        opacity: 1;
       }
       .phone-location-form button.secondary { color: #5e6b80; background: #e9edf4; }
       .phone-location-form button:disabled { opacity: .55; cursor: default; }
@@ -941,7 +947,7 @@
             <span id="reset-status" role="status" aria-live="polite">Reset bắt đầu phiên mới, không xóa lịch sử.</span>
             <div class="password-field">
               <input id="device-control-token" type="password" autocomplete="off" aria-label="Mã bảo mật Render" placeholder="Mã bảo mật Render">
-              <button class="password-toggle" id="device-control-token-toggle" type="button" aria-label="Hiện mã bảo mật Render" aria-controls="device-control-token" aria-pressed="false" title="Hiện mã bảo mật"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" style="cursor: pointer; opacity: 0.7;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
+              <button class="password-toggle" id="device-control-token-toggle" type="button" aria-label="Hiện mã bảo mật Render" aria-controls="device-control-token" aria-pressed="false" title="Hiện mã bảo mật"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
             </div>
             <button id="reset-steps-button" type="button">Reset số bước</button>
           </div>
@@ -1016,7 +1022,7 @@
             <div class="phone-location-form">
               <div class="password-field">
                 <input id="phone-location-token" type="password" autocomplete="off" aria-label="Mã chia sẻ vị trí" placeholder="Mã chia sẻ vị trí">
-                <button class="password-toggle" id="phone-location-token-toggle" type="button" aria-label="Hiện mã chia sẻ vị trí" aria-controls="phone-location-token" aria-pressed="false" title="Hiện mã chia sẻ vị trí"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" style="cursor: pointer; opacity: 0.7;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
+                <button class="password-toggle" id="phone-location-token-toggle" type="button" aria-label="Hiện mã chia sẻ vị trí" aria-controls="phone-location-token" aria-pressed="false" title="Hiện mã chia sẻ vị trí"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
               </div>
               <button id="phone-location-start" type="button">Bật vị trí</button>
               <button id="phone-location-stop" class="secondary" type="button" disabled>Tắt</button>
@@ -1452,9 +1458,9 @@
         let resetPendingSince = null;
 
         const VISIBLE_PASSWORD_ICON =
-          '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" style="cursor: pointer; opacity: 0.7;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>';
+          '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" /></svg>';
         const HIDDEN_PASSWORD_ICON =
-          '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" style="cursor: pointer; opacity: 0.7;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg>';
+          '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg>';
 
         function initializePasswordToggle(inputId, buttonId, label) {
           const input = document.getElementById(inputId);
