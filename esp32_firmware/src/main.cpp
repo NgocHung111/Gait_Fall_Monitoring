@@ -153,8 +153,7 @@ bool postTelemetry(JsonDocument& doc, const char* description,
 
     String payload;
     serializeJson(doc, payload);
-    Serial.printf("[HTTP] %s JSON payload:\n", description);
-    Serial.println(payload);
+    Serial.printf("[HTTP] Sending %s telemetry.\n", description);
 
     const String endpoint = String(SERVER_URL) + "/api/telemetry";
     Serial.printf("[HTTP] POST %s\n", endpoint.c_str());
@@ -195,6 +194,7 @@ bool postTelemetry(JsonDocument& doc, const char* description,
 bool sendAlertToBackend()
 {
     JsonDocument doc;
+    doc["device_id"] = DEVICE_PAIRING_CODE;
     doc["event"] = "FALL_DETECTED";
     doc["steps"] = stepCounter.getStepCount();
     doc["uptime_ms"] = millis();
@@ -233,6 +233,7 @@ bool sendAlertToBackend()
 bool sendStepUpdateToBackend(const StepTelemetrySnapshot& snapshot)
 {
     JsonDocument doc;
+    doc["device_id"] = DEVICE_PAIRING_CODE;
     doc["event"] = "STEP_UPDATE";
     doc["steps"] = snapshot.steps;
     doc["uptime_ms"] = millis();
@@ -272,6 +273,7 @@ bool readStepResetRevision(uint32_t& revision)
         Serial.println("[RESET] Could not initialize reset-state request.");
         return false;
     }
+    http.addHeader("X-Device-ID", DEVICE_PAIRING_CODE);
 
     const int statusCode = http.GET();
     if (statusCode != HTTP_CODE_OK) {

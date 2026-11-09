@@ -3,5 +3,6 @@
 
 #define WIFI_SSID "your-2.4GHz-hotspot-name"
 #define WIFI_PASS "your-hotspot-password"
+#define DEVICE_PAIRING_CODE ""
 
 #endif

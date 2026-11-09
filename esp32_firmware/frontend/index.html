@@ -27,6 +27,146 @@
       }
 
       * { box-sizing: border-box; }
+      .auth-screen[hidden], .app-shell[hidden] { display: none !important; }
+      .auth-screen {
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(ellipse at 12% 10%, rgba(108, 146, 255, .13), transparent 34%),
+          radial-gradient(ellipse at 90% 86%, rgba(103, 210, 178, .12), transparent 32%),
+          var(--canvas);
+      }
+      .auth-card {
+        width: min(100%, 410px);
+        padding: 30px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--surface);
+        box-shadow: 0 18px 55px rgba(49, 68, 109, .1);
+      }
+      .auth-brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        margin-bottom: 24px;
+        color: #233047;
+        font-family: "Manrope", sans-serif;
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -1px;
+      }
+      .auth-brand .brand-mark { width: 34px; height: 34px; }
+      .auth-card h1 {
+        margin: 0;
+        color: #26334a;
+        font-family: "Manrope", sans-serif;
+        font-size: 22px;
+        text-align: center;
+      }
+      .auth-subtitle {
+        margin: 8px 0 20px;
+        color: #8793a5;
+        font-size: 12px;
+        line-height: 1.6;
+        text-align: center;
+      }
+      .auth-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        margin-bottom: 18px;
+        padding: 4px;
+        border-radius: 9px;
+        background: #f2f5fa;
+      }
+      .auth-tabs button {
+        padding: 9px;
+        border: 0;
+        border-radius: 7px;
+        color: #8793a5;
+        background: transparent;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .auth-tabs button[aria-selected="true"] {
+        color: #4268d4;
+        background: white;
+        box-shadow: 0 1px 4px rgba(36, 54, 91, .1);
+      }
+      .auth-form { display: grid; gap: 13px; }
+      .auth-form[hidden] { display: none; }
+      .auth-form label {
+        display: grid;
+        gap: 6px;
+        color: #65738a;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .auth-form input {
+        width: 100%;
+        min-width: 0;
+        padding: 11px 12px;
+        border: 1px solid #dfe5ef;
+        border-radius: 8px;
+        color: #34425a;
+        background: white;
+        font: inherit;
+        font-size: 13px;
+      }
+      .auth-form input:focus {
+        border-color: #8ca5f8;
+        outline: 3px solid rgba(82, 120, 244, .12);
+      }
+      .auth-password-field { display: flex; width: 100%; }
+      .auth-password-field input { padding-right: 42px; }
+      .auth-password-field .password-toggle {
+        right: 5px;
+        width: 32px;
+        height: 32px;
+        border: 0;
+        background: transparent;
+      }
+      .auth-help {
+        margin: -4px 0 0;
+        color: #8793a5;
+        font-size: 10px;
+        line-height: 1.55;
+      }
+      .auth-submit {
+        margin-top: 3px;
+        padding: 11px;
+        border: 0;
+        border-radius: 8px;
+        color: white;
+        background: #5278f4;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .auth-submit:hover { background: #4168e4; }
+      .auth-submit:disabled { opacity: .6; cursor: wait; }
+      #auth-status {
+        min-height: 16px;
+        margin: 13px 0 0;
+        color: #c35454;
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .user-session { display: flex; align-items: center; gap: 9px; }
+      #header-username { color: #566278; font-size: 11px; font-weight: 600; }
+      #logout-button {
+        padding: 7px 10px;
+        border: 1px solid #e3e8f0;
+        border-radius: 7px;
+        color: #64728a;
+        background: white;
+        font-size: 10px;
+        cursor: pointer;
+      }
+      #logout-button:hover { color: #c35454; border-color: #efcfcd; }
       body {
         min-width: 320px;
         min-height: 100vh;
@@ -779,7 +919,52 @@
     </style>
   </head>
   <body>
-    <div class="app-shell">
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
+      <div class="auth-card">
+        <div class="auth-brand" aria-label="GaitWatch">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none">
+              <path d="M5 18h5l3-9 5.2 16L22 14l2 4h3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span>gait<span class="brand-light">watch</span></span>
+        </div>
+        <h1 id="auth-title">Chào mừng bạn</h1>
+        <p class="auth-subtitle">Đăng nhập để xem dữ liệu vận động của thiết bị GaitWatch.</p>
+        <div class="auth-tabs" role="tablist" aria-label="Tài khoản">
+          <button id="login-tab" type="button" role="tab" aria-selected="true" aria-controls="login-form">Đăng nhập</button>
+          <button id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register-form">Đăng ký</button>
+        </div>
+        <form class="auth-form" id="login-form">
+          <label for="login-username">Tên đăng nhập
+            <input id="login-username" name="username" type="text" minlength="3" maxlength="32" autocomplete="username" required>
+          </label>
+          <label for="login-password">Mật khẩu
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="auth-submit" id="login-submit" type="submit">Đăng nhập</button>
+        </form>
+        <form class="auth-form" id="register-form" hidden>
+          <label for="register-username">Tên đăng nhập
+            <input id="register-username" name="username" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username" required>
+          </label>
+          <label for="register-password">Mật khẩu
+            <input id="register-password" name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
+          </label>
+          <label for="register-device-id">Mã ghép thiết bị ESP32
+            <div class="password-field auth-password-field">
+              <input id="register-device-id" name="device_id" type="password" minlength="32" maxlength="128" pattern="[A-Za-z0-9_-]+" autocomplete="off" required>
+              <button class="password-toggle" id="register-device-id-toggle" type="button" aria-label="Hiện mã ghép thiết bị" aria-controls="register-device-id" aria-pressed="false" title="Hiện mã ghép thiết bị"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
+            </div>
+          </label>
+          <p class="auth-help">Dùng mã bí mật đã cấu hình trong firmware. Mã cần tối thiểu 32 ký tự và chỉ ghép được với một tài khoản.</p>
+          <button class="auth-submit" id="register-submit" type="submit">Tạo tài khoản</button>
+        </form>
+        <p id="auth-status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <div class="app-shell" id="dashboard-app" hidden>
       <aside class="sidebar" aria-label="Điều hướng chính">
         <a class="brand" href="#" aria-label="GaitWatch trang chủ">
           <span class="brand-mark" aria-hidden="true">
@@ -814,8 +999,8 @@
         <div class="profile">
           <div class="profile-avatar" aria-hidden="true">GW</div>
           <div>
-            <strong>Gait Monitor</strong>
-            <span>Thiết bị ESP32</span>
+            <strong id="profile-username">GaitWatch</strong>
+            <span>Tài khoản</span>
           </div>
           <span class="profile-menu" aria-hidden="true">···</span>
         </div>
@@ -846,6 +1031,10 @@
                 </svg>
                 <strong id="wifi-rssi-status">Chưa có dữ liệu</strong>
               </span>
+            </div>
+            <div class="user-session">
+              <span id="header-username"></span>
+              <button id="logout-button" type="button">Đăng xuất</button>
             </div>
             <button class="icon-button" id="refresh-button" type="button" aria-label="Làm mới dữ liệu" title="Làm mới dữ liệu">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 9A7.5 7.5 0 0 1 18 6l2 6M4 17v-5h5m10.2 3A7.5 7.5 0 0 1 6 18l-2-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -945,10 +1134,6 @@
           </div>
           <div class="activity-controls-actions">
             <span id="reset-status" role="status" aria-live="polite">Reset bắt đầu phiên mới, không xóa lịch sử.</span>
-            <div class="password-field">
-              <input id="device-control-token" type="password" autocomplete="off" aria-label="Mã bảo mật Render" placeholder="Mã bảo mật Render">
-              <button class="password-toggle" id="device-control-token-toggle" type="button" aria-label="Hiện mã bảo mật Render" aria-controls="device-control-token" aria-pressed="false" title="Hiện mã bảo mật"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
-            </div>
             <button id="reset-steps-button" type="button">Reset số bước</button>
           </div>
         </section>
@@ -1017,13 +1202,9 @@
           <div class="phone-location-panel">
             <div class="phone-location-copy">
               <strong>Dùng GPS miễn phí trên điện thoại</strong>
-              Mở trang này trên điện thoại, bật chia sẻ vị trí và giữ trang hoạt động. Điện thoại cần đi cùng người đeo thiết bị.
+              Đăng nhập trên điện thoại, bật chia sẻ vị trí và giữ trang hoạt động. Điện thoại cần đi cùng người đeo thiết bị.
             </div>
             <div class="phone-location-form">
-              <div class="password-field">
-                <input id="phone-location-token" type="password" autocomplete="off" aria-label="Mã chia sẻ vị trí" placeholder="Mã chia sẻ vị trí">
-                <button class="password-toggle" id="phone-location-token-toggle" type="button" aria-label="Hiện mã chia sẻ vị trí" aria-controls="phone-location-token" aria-pressed="false" title="Hiện mã chia sẻ vị trí"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
-              </div>
               <button id="phone-location-start" type="button">Bật vị trí</button>
               <button id="phone-location-stop" class="secondary" type="button" disabled>Tắt</button>
             </div>
@@ -1104,6 +1285,186 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script>
+      (function () {
+        "use strict";
+
+        const TOKEN_KEY = "gaitwatch-access-token";
+        const LOCAL_API_ORIGIN =
+          ["localhost", "127.0.0.1"].includes(window.location.hostname) &&
+          window.location.port === "5500"
+            ? "http://localhost:8000"
+            : "";
+
+        function apiUrl(path) {
+          return LOCAL_API_ORIGIN + path;
+        }
+
+        function setStatus(message) {
+          document.getElementById("auth-status").textContent = message;
+        }
+
+        async function responseError(response, fallback) {
+          try {
+            const result = await response.json();
+            return result.detail || fallback;
+          } catch (error) {
+            if (error instanceof SyntaxError) {
+              return fallback;
+            }
+            throw error;
+          }
+        }
+
+        function setActiveTab(showRegister) {
+          document.getElementById("login-form").hidden = showRegister;
+          document.getElementById("register-form").hidden = !showRegister;
+          document.getElementById("login-tab").setAttribute(
+            "aria-selected",
+            String(!showRegister)
+          );
+          document.getElementById("register-tab").setAttribute(
+            "aria-selected",
+            String(showRegister)
+          );
+          document.getElementById("auth-title").textContent = showRegister
+            ? "Tạo tài khoản GaitWatch"
+            : "Chào mừng bạn";
+          document.querySelector(".auth-subtitle").textContent = showRegister
+            ? "Ghép tài khoản với thiết bị ESP32 của bạn."
+            : "Đăng nhập để xem dữ liệu vận động của thiết bị GaitWatch.";
+          setStatus("");
+        }
+
+        async function saveLogin(username, password) {
+          const response = await fetch(apiUrl("/api/login"), {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({ username: username, password: password }),
+          });
+          if (!response.ok) {
+            throw new Error(await responseError(response, "Không thể đăng nhập."));
+          }
+          const result = await response.json();
+          localStorage.setItem(TOKEN_KEY, result.access_token);
+          window.location.reload();
+        }
+
+        async function initialize() {
+          const loginForm = document.getElementById("login-form");
+          const registerForm = document.getElementById("register-form");
+          const loginButton = document.getElementById("login-submit");
+          const registerButton = document.getElementById("register-submit");
+          document.getElementById("login-tab").addEventListener("click", function () {
+            setActiveTab(false);
+          });
+          document.getElementById("register-tab").addEventListener("click", function () {
+            setActiveTab(true);
+          });
+
+          loginForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            loginButton.disabled = true;
+            setStatus("");
+            try {
+              await saveLogin(
+                document.getElementById("login-username").value.trim(),
+                document.getElementById("login-password").value
+              );
+            } catch (error) {
+              setStatus(error.message || "Không thể đăng nhập.");
+            } finally {
+              loginButton.disabled = false;
+            }
+          });
+
+          registerForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            registerButton.disabled = true;
+            setStatus("");
+            const username = document.getElementById("register-username").value.trim();
+            const password = document.getElementById("register-password").value;
+            const deviceId = document.getElementById("register-device-id").value.trim();
+            try {
+              const response = await fetch(apiUrl("/api/register"), {
+                method: "POST",
+                headers: {
+                  Accept: "application/json",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  username: username,
+                  password: password,
+                  device_id: deviceId,
+                }),
+              });
+              if (!response.ok) {
+                throw new Error(
+                  await responseError(response, "Không thể tạo tài khoản.")
+                );
+              }
+              await saveLogin(username, password);
+            } catch (error) {
+              setStatus(error.message || "Không thể tạo tài khoản.");
+            } finally {
+              registerButton.disabled = false;
+            }
+          });
+
+          document.getElementById("logout-button").addEventListener("click", function () {
+            localStorage.removeItem(TOKEN_KEY);
+            window.location.reload();
+          });
+
+          const token = localStorage.getItem(TOKEN_KEY);
+          if (!token) {
+            return null;
+          }
+          const response = await fetch(apiUrl("/api/me"), {
+            headers: { Accept: "application/json", Authorization: "Bearer " + token },
+            cache: "no-store",
+          });
+          if (response.status === 401) {
+            localStorage.removeItem(TOKEN_KEY);
+            return null;
+          }
+          if (!response.ok) {
+            setStatus(await responseError(response, "Không thể xác thực tài khoản."));
+            return null;
+          }
+          return response.json();
+        }
+
+        async function fetchAuthenticated(url, options) {
+          const token = localStorage.getItem(TOKEN_KEY);
+          if (!token) {
+            window.location.reload();
+            throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+          }
+          const response = await fetch(apiUrl(url), {
+            ...options,
+            headers: {
+              Accept: "application/json",
+              ...(options && options.headers),
+              Authorization: "Bearer " + token,
+            },
+          });
+          if (response.status === 401) {
+            localStorage.removeItem(TOKEN_KEY);
+            window.location.reload();
+            throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+          }
+          return response;
+        }
+
+        window.GaitWatchAuth = {
+          initialize: initialize,
+          fetch: fetchAuthenticated,
+        };
+      })();
+
       (function () {
         "use strict";
 
@@ -1327,14 +1688,12 @@
             status.classList.toggle("error", Boolean(isError));
           }
 
-          async function sendLocation(position, token) {
+          async function sendLocation(position) {
             try {
-              const response = await fetch("/api/phone-location", {
+              const response = await window.GaitWatchAuth.fetch("/api/phone-location", {
                 method: "POST",
                 headers: {
-                  Accept: "application/json",
                   "Content-Type": "application/json",
-                  Authorization: "Bearer " + token,
                 },
                 body: JSON.stringify({
                   lat: position.coords.latitude,
@@ -1368,7 +1727,7 @@
             }
           }
 
-          function requestLocation(token) {
+          function requestLocation() {
             if (requestPending) {
               return;
             }
@@ -1379,7 +1738,7 @@
                   requestPending = false;
                   return;
                 }
-                sendLocation(position, token);
+                sendLocation(position);
               },
               function (error) {
                 requestPending = false;
@@ -1398,33 +1757,21 @@
           }
 
           function initialize() {
-            const tokenInput = document.getElementById("phone-location-token");
             const startButton = document.getElementById("phone-location-start");
             const stopButton = document.getElementById("phone-location-stop");
-            tokenInput.value = sessionStorage.getItem("gaitwatch-phone-location-token") || "";
 
             startButton.addEventListener("click", function () {
-              const token = tokenInput.value.trim();
-              if (!token) {
-                setStatus("Nhập mã chia sẻ vị trí do quản trị viên cấu hình trên Render.", true);
-                return;
-              }
               if (!navigator.geolocation) {
                 setStatus("Trình duyệt này không hỗ trợ định vị.", true);
                 return;
-              }
-              sessionStorage.setItem("gaitwatch-phone-location-token", token);
-              const controlTokenInput = document.getElementById("device-control-token");
-              if (controlTokenInput) {
-                controlTokenInput.value = token;
               }
               tracking = true;
               startButton.disabled = true;
               stopButton.disabled = false;
               setStatus("Đang yêu cầu quyền truy cập vị trí...", false);
-              requestLocation(token);
+              requestLocation();
               updateTimer = window.setInterval(function () {
-                requestLocation(token);
+                requestLocation();
               }, UPDATE_INTERVAL_MS);
             });
 
@@ -1435,7 +1782,6 @@
               requestPending = false;
               startButton.disabled = false;
               stopButton.disabled = true;
-              sessionStorage.removeItem("gaitwatch-phone-location-token");
               setStatus("Đã tắt chia sẻ. Vị trí cũ sẽ không được dùng cho té ngã sau 2 phút.", false);
             });
           }
@@ -1719,14 +2065,7 @@
           const resetDialog = document.getElementById("reset-confirmation");
           const confirmResetButton = document.getElementById("confirm-reset-steps");
           const cancelResetButton = document.getElementById("cancel-reset-steps");
-          const controlTokenInput = document.getElementById("device-control-token");
           const resetStatus = document.getElementById("reset-status");
-          controlTokenInput.value =
-            sessionStorage.getItem("gaitwatch-phone-location-token") || "";
-          controlTokenInput.addEventListener("input", function () {
-            document.getElementById("phone-location-token").value =
-              controlTokenInput.value;
-          });
           weightInput.value =
             localStorage.getItem("gaitwatch-weight-kg") || weightInput.value;
           stepLengthInput.value =
@@ -1762,29 +2101,16 @@
           });
           confirmResetButton.addEventListener("click", async function () {
             resetDialog.close();
-            const token = controlTokenInput.value.trim();
-            if (!token) {
-              resetStatus.textContent =
-                "Nhập PHONE_LOCATION_TOKEN đã cấu hình trên Render để xác nhận reset.";
-              return;
-            }
-
             confirmResetButton.disabled = true;
             resetStatus.textContent = "Đang gửi lệnh reset đến máy chủ...";
             try {
-              const response = await fetch("/api/device/steps/reset", {
+              const response = await window.GaitWatchAuth.fetch("/api/device/steps/reset", {
                 method: "POST",
-                headers: {
-                  Accept: "application/json",
-                  Authorization: "Bearer " + token,
-                },
               });
               const result = await response.json();
               if (!response.ok) {
                 throw new Error(result.detail || "Không thể gửi lệnh reset.");
               }
-              sessionStorage.setItem("gaitwatch-phone-location-token", token);
-              document.getElementById("phone-location-token").value = token;
               resetPendingSince = Date.now();
               resetStatus.textContent =
                 "Đã gửi lệnh. ESP32 sẽ reset khi kết nối mạng; chờ số bước về 0.";
@@ -1800,18 +2126,7 @@
         }
 
         async function requestContacts(url, options) {
-          const token = document.getElementById("device-control-token").value.trim();
-          if (!token) {
-            throw new Error("Nhập mã bảo mật Render ở thanh cấu hình phía trên.");
-          }
-          const response = await fetch(url, {
-            ...options,
-            headers: {
-              Accept: "application/json",
-              Authorization: "Bearer " + token,
-              ...(options && options.headers),
-            },
-          });
+          const response = await window.GaitWatchAuth.fetch(url, options);
           if (!response.ok) {
             let detail = "Không thể quản lý danh sách người nhận.";
             try {
@@ -1965,8 +2280,7 @@
                   new Date(latestTimestamp - 1000).toISOString()
                 )
               : HISTORY_URL + "?period=all";
-            const response = await fetch(historyUrl, {
-              headers: { Accept: "application/json" },
+            const response = await window.GaitWatchAuth.fetch(historyUrl, {
               cache: "no-store",
             });
             if (!response.ok) {
@@ -2144,19 +2458,34 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
+          initializePasswordToggle(
+            "register-device-id",
+            "register-device-id-toggle",
+            "mã ghép thiết bị"
+          );
+          window.GaitWatchAuth.initialize()
+            .then(function (user) {
+              if (!user) {
+                return;
+              }
+              document.getElementById("auth-screen").hidden = true;
+              document.getElementById("dashboard-app").hidden = false;
+              document.getElementById("header-username").textContent =
+                user.username;
+              document.getElementById("profile-username").textContent =
+                user.username;
+              initializeDashboard();
+            })
+            .catch(function (error) {
+              document.getElementById("auth-status").textContent =
+                error.message || "Không thể kết nối máy chủ xác thực.";
+            });
+        });
+
+        function initializeDashboard() {
           if (window.GaitWatchMap) {
             window.GaitWatchMap.initialize();
           }
-          initializePasswordToggle(
-            "device-control-token",
-            "device-control-token-toggle",
-            "mã bảo mật Render"
-          );
-          initializePasswordToggle(
-            "phone-location-token",
-            "phone-location-token-toggle",
-            "mã chia sẻ vị trí"
-          );
           window.GaitWatchPhoneLocation.initialize();
           initializeActivityControls();
           initializeAlertContacts();
@@ -2175,7 +2504,7 @@
             });
           loadTelemetry();
           window.setInterval(loadTelemetry, POLL_INTERVAL_MS);
-        });
+        }
       })();
     </script>
   </body>

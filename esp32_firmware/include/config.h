@@ -3,6 +3,10 @@
 
 #include "secrets.h"
 
+#ifndef DEVICE_PAIRING_CODE
+#define DEVICE_PAIRING_CODE ""
+#endif
+
 // Replace this with the Render service URL assigned during deployment.
 #define SERVER_URL "https://gait-fall-monitoring.onrender.com"
 

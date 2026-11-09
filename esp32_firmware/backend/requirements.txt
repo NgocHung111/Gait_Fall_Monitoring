@@ -4,3 +4,7 @@ requests
 numpy
 pydantic>=2.0.0
 psycopg[binary]>=3.2.0
+passlib[bcrypt]
+bcrypt<5
+python-jose[cryptography]
+python-multipart

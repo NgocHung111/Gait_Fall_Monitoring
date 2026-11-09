@@ -5,23 +5,37 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
+from app.core.auth import (
+    create_access_token,
+    decode_access_token,
+    hash_device_code,
+    hash_password,
+)
 from app.main import (
+    AccessTokenResponse,
     AlertContact,
     AlertContactCreate,
     AlertContactStatus,
+    AuthenticatedUser,
     PHONE_LOCATION_MAX_AGE_SECONDS,
     PhoneLocationUpdate,
+    RegisterRequest,
     StepResetState,
     Telemetry,
     TelemetryHistoryItem,
+    _get_authenticated_user,
+    _read_phone_location,
+    _read_step_reset_state,
     _read_telemetry_history,
+    _request_step_reset,
+    _store_phone_location,
     _store_telemetry_record,
     add_alert_contact,
     get_alert_contacts,
     get_telemetry_history,
-    get_device_reset_state,
-    remove_alert_contact,
+    login_user,
     receive_telemetry,
+    register_user,
     reset_device_steps,
     telemetry_history,
     update_alert_contact,
@@ -30,58 +44,79 @@ from app.main import (
 from app.services.gait_analysis import GaitMetrics
 
 
-class TelemetryHistoryTests(unittest.TestCase):
+class AuthenticationAndTelemetryTests(unittest.TestCase):
     def setUp(self) -> None:
+        import app.main
+
+        self.device_code = "A" * 64
+        self.user = AuthenticatedUser(
+            id=1,
+            username="alice",
+            device_id=hash_device_code(self.device_code),
+        )
+        self.other_user = AuthenticatedUser(
+            id=2,
+            username="bob",
+            device_id=hash_device_code("B" * 64),
+        )
         telemetry_history.clear()
-        self._reset_step_revision()
-        self._reset_alert_contacts()
-        self.addCleanup(self._clear_phone_location)
-        self.addCleanup(self._reset_alert_contacts)
+        app.main.latest_phone_location.clear()
+        app.main.step_reset_revisions.clear()
+        app.main.alert_contacts.clear()
+        app.main.alert_contacts_by_device.clear()
+        app.main.next_alert_contact_id = 1
+        self.database_patch = patch("app.main.DATABASE_URL", "")
+        self.database_patch.start()
+        self.addCleanup(self.database_patch.stop)
         self.addCleanup(telemetry_history.clear)
-        self.addCleanup(self._reset_step_revision)
+        self.addCleanup(app.main.latest_phone_location.clear)
+        self.addCleanup(app.main.step_reset_revisions.clear)
+        self.addCleanup(app.main.alert_contacts_by_device.clear)
 
-    @staticmethod
-    def _reset_alert_contacts() -> None:
-        import app.main
-
-        with app.main.alert_contacts_lock:
-            app.main.alert_contacts.clear()
-            app.main.next_alert_contact_id = 1
-
-    @staticmethod
-    def _reset_step_revision() -> None:
-        import app.main
-
-        app.main.step_reset_revision = 0
-
-    @staticmethod
-    def _clear_phone_location() -> None:
-        import app.main
-
-        app.main.latest_phone_location = None
+    def _receive(self, telemetry: Telemetry):
+        telemetry.device_id = self.device_code
+        with patch("app.main._get_device_owner", return_value=self.user):
+            return receive_telemetry(telemetry)
 
     def test_records_successful_telemetry_for_dashboard(self) -> None:
-        response = receive_telemetry(
+        response = self._receive(
             Telemetry(steps=123, step_intervals_ms=[900, 1100])
         )
 
-        history = get_telemetry_history(limit=1)
+        history = get_telemetry_history(limit=1, current_user=self.user)
         self.assertEqual(response.steps, 123)
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0].steps, 123)
         self.assertEqual(history[0].gait.cadence_steps_per_minute, 60.0)
         self.assertIsNotNone(history[0].timestamp_utc)
 
-    def test_time_range_history_returns_records_after_cutoff(self) -> None:
-        recent = receive_telemetry(Telemetry(event="STEP_UPDATE", steps=2))
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=1)
-        history = get_telemetry_history(period="hour", since=cutoff)
+    def test_history_is_scoped_to_the_authenticated_device(self) -> None:
+        self._receive(Telemetry(event="STEP_UPDATE", steps=2))
+        other_record = TelemetryHistoryItem(
+            received=True,
+            event="STEP_UPDATE",
+            steps=99,
+            gait=GaitMetrics(
+                step_intervals_ms=[],
+                cadence_steps_per_minute=None,
+                mean_step_interval_ms=None,
+                variability_cv_percent=None,
+            ),
+            location=None,
+            location_error=None,
+            telegram_sent=False,
+            timestamp_utc=datetime.now(timezone.utc),
+            device_id=self.other_user.device_id,
+        )
+        _store_telemetry_record(other_record, self.other_user.device_id)
 
-        self.assertEqual(len(history), 1)
-        self.assertEqual(history[0].steps, recent.steps)
+        own_history = get_telemetry_history(current_user=self.user)
+        other_history = get_telemetry_history(current_user=self.other_user)
+        self.assertEqual([record.steps for record in own_history], [2])
+        self.assertEqual([record.steps for record in other_history], [99])
 
     def test_step_update_is_stored_without_sending_telegram(self) -> None:
-        response = receive_telemetry(
+        response = self._receive(
             Telemetry(
                 event="STEP_UPDATE",
                 steps=47,
@@ -89,94 +124,51 @@ class TelemetryHistoryTests(unittest.TestCase):
             )
         )
 
-        history = get_telemetry_history(limit=1)
+        history = get_telemetry_history(limit=1, current_user=self.user)
         self.assertEqual(response.event, "STEP_UPDATE")
         self.assertEqual(response.steps, 47)
         self.assertFalse(response.telegram_sent)
-        self.assertAlmostEqual(
-            response.gait.cadence_steps_per_minute, 60.0 / 0.95
-        )
+        self.assertAlmostEqual(response.gait.cadence_steps_per_minute, 60.0 / 0.95)
         self.assertEqual(history[0].event, "STEP_UPDATE")
 
-    def test_persists_hardware_status_in_telemetry_history(self) -> None:
-        response = receive_telemetry(
-            Telemetry(
-                event="STEP_UPDATE",
-                steps=9,
-                rssi_dbm=-63,
-                wifi_ssid="Home_WiFi",
-                battery_percent=82,
-            )
+    def test_contact_list_and_changes_are_scoped_to_device(self) -> None:
+        contact = add_alert_contact(
+            AlertContactCreate(name="  Alex  ", chat_id="123456"),
+            current_user=self.user,
         )
-
-        history = get_telemetry_history(limit=1)
-        self.assertEqual(response.rssi_dbm, -63)
-        self.assertEqual(response.wifi_ssid, "Home_WiFi")
-        self.assertEqual(response.battery_percent, 82)
-        self.assertEqual(history[0].rssi_dbm, -63)
-        self.assertEqual(history[0].wifi_ssid, "Home_WiFi")
-        self.assertEqual(history[0].battery_percent, 82)
-
-    def test_contact_management_requires_control_token(self) -> None:
-        with (
-            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
-            patch("app.main.DATABASE_URL", ""),
-        ):
-            with self.assertRaises(HTTPException) as error:
-                get_alert_contacts(authorization=None)
-        self.assertEqual(error.exception.status_code, 401)
-
-    def test_contacts_can_be_added_toggled_listed_and_deleted(self) -> None:
-        with (
-            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
-            patch("app.main.DATABASE_URL", ""),
-        ):
-            contact = add_alert_contact(
-                AlertContactCreate(name="  Alex  ", chat_id="123456"),
-                authorization="Bearer test-token",
-            )
-            listed = get_alert_contacts(authorization="Bearer test-token")
-            disabled = update_alert_contact(
-                contact.id,
-                AlertContactStatus(active=False),
-                authorization="Bearer test-token",
-            )
-            remove_alert_contact(
-                contact.id, authorization="Bearer test-token"
-            )
-            remaining = get_alert_contacts(authorization="Bearer test-token")
-
-        self.assertEqual(contact.name, "Alex")
+        listed = get_alert_contacts(current_user=self.user)
+        self.assertEqual(get_alert_contacts(current_user=self.other_user), [])
+        disabled = update_alert_contact(
+            contact.id,
+            AlertContactStatus(active=False),
+            current_user=self.user,
+        )
         self.assertTrue(listed[0].active)
         self.assertFalse(disabled.active)
-        self.assertEqual(remaining, [])
 
-    def test_duplicate_contact_chat_id_is_rejected(self) -> None:
-        with (
-            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
-            patch("app.main.DATABASE_URL", ""),
-        ):
+    def test_duplicate_contact_chat_id_is_rejected_for_same_device(self) -> None:
+        add_alert_contact(
+            AlertContactCreate(name="Alex", chat_id="123456"),
+            current_user=self.user,
+        )
+        add_alert_contact(
+            AlertContactCreate(name="Sam", chat_id="123456"),
+            current_user=self.other_user,
+        )
+        with self.assertRaises(HTTPException) as error:
             add_alert_contact(
-                AlertContactCreate(name="Alex", chat_id="123456"),
-                authorization="Bearer test-token",
+                AlertContactCreate(name="Sam", chat_id="123456"),
+                current_user=self.user,
             )
-            with self.assertRaises(HTTPException) as error:
-                add_alert_contact(
-                    AlertContactCreate(name="Sam", chat_id="123456"),
-                    authorization="Bearer test-token",
-                )
         self.assertEqual(error.exception.status_code, 409)
 
-    def test_fall_alert_sends_to_active_contacts_and_legacy_recipient(self) -> None:
+    def test_fall_alert_sends_to_device_contacts_and_legacy_recipient(self) -> None:
         import app.main
 
-        app.main.alert_contacts.extend(
-            [
-                AlertContact(id=1, name="Alex", chat_id="123456", active=True),
-                AlertContact(id=2, name="Sam", chat_id="654321", active=False),
-                AlertContact(id=3, name="Jordan", chat_id="789012", active=True),
-            ]
-        )
+        app.main.alert_contacts_by_device[self.user.device_id] = [
+            AlertContact(id=1, name="Alex", chat_id="789012", active=True),
+            AlertContact(id=2, name="Sam", chat_id="654321", active=False),
+        ]
         settings = SimpleNamespace(
             telegram_bot_token=SimpleNamespace(get_secret_value=lambda: "bot-token"),
             telegram_chat_id="123456",
@@ -185,9 +177,7 @@ class TelemetryHistoryTests(unittest.TestCase):
             patch("app.main.settings", settings),
             patch("app.main.send_emergency_message") as send_message,
         ):
-            response = receive_telemetry(
-                Telemetry(event="FALL_DETECTED", steps=12)
-            )
+            response = self._receive(Telemetry(event="FALL_DETECTED", steps=12))
 
         self.assertTrue(response.telegram_sent)
         self.assertEqual(
@@ -195,80 +185,94 @@ class TelemetryHistoryTests(unittest.TestCase):
             ["123456", "789012"],
         )
 
-    def test_phone_location_is_used_for_fall_and_telegram(self) -> None:
-        timestamp = datetime.now(timezone.utc)
+    def test_phone_location_is_isolated_and_attached_to_the_correct_fall(self) -> None:
         location = PhoneLocationUpdate(
             lat=10.7769,
             lng=106.7009,
             accuracy_m=8.5,
-            timestamp_utc=timestamp,
+            timestamp_utc=datetime.now(timezone.utc),
         )
+        update_phone_location(location, current_user=self.user)
+        self.assertIsNone(_read_phone_location(self.other_user.device_id))
 
-        with patch("app.main.PHONE_LOCATION_TOKEN", "test-token"):
-            update_phone_location(location, authorization="Bearer test-token")
-
-        with patch("app.main.send_emergency_message") as send_message:
-            response = receive_telemetry(Telemetry(event="FALL_DETECTED", steps=12))
+        with patch("app.main.send_emergency_message"):
+            response = self._receive(Telemetry(event="FALL_DETECTED", steps=12))
 
         self.assertEqual(response.location, {"lat": 10.7769, "lng": 106.7009})
         self.assertEqual(response.location_source, "phone")
-        self.assertLessEqual(response.location_age_seconds, PHONE_LOCATION_MAX_AGE_SECONDS)
-        send_message.assert_called_once()
-        self.assertEqual(send_message.call_args.kwargs["latitude"], 10.7769)
-        history = get_telemetry_history(limit=1)
-        self.assertEqual(history[0].location_source, "phone")
-
-    def test_phone_location_update_requires_configured_token(self) -> None:
-        location = PhoneLocationUpdate(
-            lat=10.0,
-            lng=106.0,
-            timestamp_utc=datetime.now(timezone.utc),
+        self.assertLessEqual(
+            response.location_age_seconds, PHONE_LOCATION_MAX_AGE_SECONDS
         )
-        with patch("app.main.PHONE_LOCATION_TOKEN", "test-token"):
-            with self.assertRaises(HTTPException) as error:
-                update_phone_location(location, authorization="Bearer wrong-token")
-        self.assertEqual(error.exception.status_code, 401)
 
-    def test_dashboard_step_reset_increments_device_revision(self) -> None:
-        with (
-            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
-            patch("app.main.DATABASE_URL", ""),
-        ):
-            state = reset_device_steps(authorization="Bearer test-token")
-            current_state = get_device_reset_state()
+    def test_step_reset_revisions_are_isolated_per_device(self) -> None:
+        state = reset_device_steps(current_user=self.user)
+        other_state = _read_step_reset_state(self.other_user.device_id)
 
         self.assertEqual(state, StepResetState(reset_revision=1))
-        self.assertEqual(current_state, state)
+        self.assertEqual(other_state, StepResetState(reset_revision=0))
+        self.assertEqual(_request_step_reset(self.other_user.device_id).reset_revision, 1)
 
-    def test_dashboard_step_reset_requires_token(self) -> None:
-        with (
-            patch("app.main.PHONE_LOCATION_TOKEN", "test-token"),
-            patch("app.main.DATABASE_URL", ""),
-        ):
-            with self.assertRaises(HTTPException) as error:
-                reset_device_steps(authorization="Bearer wrong-token")
-        self.assertEqual(error.exception.status_code, 401)
-
-    def test_expired_phone_location_is_not_attached_to_a_fall(self) -> None:
-        stale_location = PhoneLocationUpdate(
+    def test_rejects_stale_phone_location(self) -> None:
+        location = PhoneLocationUpdate(
             lat=10.0,
             lng=106.0,
             timestamp_utc=datetime.now(timezone.utc) - timedelta(minutes=3),
         )
-        import app.main
+        with self.assertRaises(HTTPException) as error:
+            update_phone_location(location, current_user=self.user)
+        self.assertEqual(error.exception.status_code, 422)
 
-        app.main.latest_phone_location = stale_location
-        with patch("app.main.send_emergency_message"):
-            response = receive_telemetry(Telemetry(event="FALL_DETECTED", steps=12))
+    def test_registration_hashes_the_device_code_and_password(self) -> None:
+        user = self.user
+        with (
+            patch("app.main.DATABASE_URL", "postgresql://test"),
+            patch("app.main.JWT_SECRET_KEY", "s" * 32),
+            patch("app.main._create_user", return_value=user) as create_user,
+        ):
+            result = register_user(
+                RegisterRequest(
+                    username="Alice",
+                    password="correct horse battery",
+                    device_id=self.device_code,
+                )
+            )
 
-        self.assertIsNone(response.location)
-        self.assertIn("stale", response.location_error)
+        self.assertEqual(result.username, "alice")
+        self.assertNotEqual(
+            create_user.call_args.args[1], "correct horse battery"
+        )
+        self.assertEqual(
+            create_user.call_args.args[2], hash_device_code(self.device_code)
+        )
 
-    def test_rejects_out_of_range_history_limit(self) -> None:
-        with self.assertRaises(HTTPException):
-            get_telemetry_history(limit=251)
+    def test_login_returns_a_signed_access_token(self) -> None:
+        password_hash = hash_password("correct horse battery")
+        stored_user = self.user.model_copy(
+            update={"hashed_password": password_hash}
+        )
+        secret = "s" * 32
+        with (
+            patch("app.main.DATABASE_URL", "postgresql://test"),
+            patch("app.main.JWT_SECRET_KEY", secret),
+            patch("app.main._read_user_by_username", return_value=stored_user),
+        ):
+            result = login_user(
+                SimpleNamespace(username="alice", password="correct horse battery")
+            )
 
-    def test_reads_persisted_history_from_postgres(self) -> None:
+        self.assertIsInstance(result, AccessTokenResponse)
+        self.assertEqual(decode_access_token(result.access_token, secret), "1")
+
+    def test_invalid_or_expired_access_token_is_rejected(self) -> None:
+        with (
+            patch("app.main.DATABASE_URL", "postgresql://test"),
+            patch("app.main.JWT_SECRET_KEY", "s" * 32),
+        ):
+            with self.assertRaises(HTTPException) as error:
+                _get_authenticated_user(None)
+        self.assertEqual(error.exception.status_code, 401)
+
+    def test_reads_persisted_history_with_device_filter(self) -> None:
         record = TelemetryHistoryItem(
             received=True,
             event="FALL_DETECTED",
@@ -295,12 +299,15 @@ class TelemetryHistoryTests(unittest.TestCase):
             patch("app.main.DATABASE_URL", "postgresql://test"),
             patch("psycopg.connect", return_value=connection_context),
         ):
-            history = _read_telemetry_history(limit=1)
+            history = _read_telemetry_history(
+                limit=1, device_id=self.user.device_id
+            )
 
-        self.assertEqual(history, [record])
-        connection.execute.assert_called_once()
+        self.assertEqual(history, [record.model_copy(update={"device_id": self.user.device_id})])
+        self.assertIn("device_id = %s", connection.execute.call_args.args[0])
+        self.assertEqual(connection.execute.call_args.args[1][0], self.user.device_id)
 
-    def test_persists_telemetry_to_postgres(self) -> None:
+    def test_persists_telemetry_device_id_separately(self) -> None:
         record = TelemetryHistoryItem(
             received=True,
             event="FALL_DETECTED",
@@ -324,10 +331,16 @@ class TelemetryHistoryTests(unittest.TestCase):
             patch("app.main.DATABASE_URL", "postgresql://test"),
             patch("psycopg.connect", return_value=connection_context),
         ):
-            _store_telemetry_record(record)
+            _store_telemetry_record(record, self.user.device_id)
 
-        connection.execute.assert_called_once()
-        self.assertEqual(connection.execute.call_args.args[1][0], record.timestamp_utc)
+        self.assertIn("device_id", connection.execute.call_args.args[0])
+        self.assertEqual(
+            connection.execute.call_args.args[1][1], self.user.device_id
+        )
+
+    def test_rejects_out_of_range_history_limit(self) -> None:
+        with self.assertRaises(HTTPException):
+            get_telemetry_history(limit=251, current_user=self.user)
 
 
 if __name__ == "__main__":

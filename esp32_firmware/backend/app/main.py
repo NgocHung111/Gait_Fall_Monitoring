@@ -1,4 +1,3 @@
-import hmac
 import logging
 import os
 import re
@@ -6,14 +5,23 @@ import threading
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from starlette.staticfiles import StaticFiles
 
+from app.core.auth import (
+    create_access_token,
+    decode_access_token,
+    hash_device_code,
+    hash_password,
+    verify_password,
+)
 from app.core.config import settings
 from app.services.gait_analysis import GaitMetrics, analyze_gait
 from app.services.geolocation import GeolocationError, locate_wifi_access_points
@@ -31,6 +39,7 @@ class WifiData(BaseModel):
 
 
 class Telemetry(BaseModel):
+    device_id: str | None = Field(default=None, min_length=32, max_length=128)
     event: str | None = None
     steps: int = Field(default=0, ge=0)
     uptime_ms: int | None = Field(default=None, ge=0)
@@ -86,14 +95,41 @@ class TelemetryResponse(BaseModel):
 
 class TelemetryHistoryItem(TelemetryResponse):
     timestamp_utc: datetime
+    device_id: str | None = Field(default=None, exclude=True)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(
+        min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$"
+    )
+    password: str = Field(min_length=8, max_length=128)
+    device_id: str = Field(min_length=32, max_length=128)
+
+
+class AuthenticatedUser(BaseModel):
+    id: int
+    username: str
+    device_id: str = Field(exclude=True)
+    hashed_password: str | None = Field(default=None, exclude=True)
+
+
+class PublicUser(BaseModel):
+    id: int
+    username: str
+
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-PHONE_LOCATION_TOKEN = os.getenv("PHONE_LOCATION_TOKEN", "").strip()
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip()
 PHONE_LOCATION_MAX_AGE_SECONDS = 120
 LOCAL_HISTORY_LIMIT = 250
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 logger = logging.getLogger(__name__)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login", auto_error=False)
 
 
 @asynccontextmanager
@@ -107,7 +143,59 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 CREATE TABLE IF NOT EXISTS telemetry_history (
                     id BIGSERIAL PRIMARY KEY,
                     timestamp_utc TIMESTAMPTZ NOT NULL,
+                    device_id TEXT,
                     record JSONB NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "ALTER TABLE telemetry_history ADD COLUMN IF NOT EXISTS device_id TEXT"
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS telemetry_history_device_time_idx
+                ON telemetry_history (device_id, timestamp_utc, id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGSERIAL PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    hashed_password TEXT NOT NULL,
+                    device_id TEXT NOT NULL UNIQUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS phone_location_by_device (
+                    device_id TEXT PRIMARY KEY REFERENCES users(device_id) ON DELETE CASCADE,
+                    lat DOUBLE PRECISION NOT NULL,
+                    lng DOUBLE PRECISION NOT NULL,
+                    accuracy_m DOUBLE PRECISION,
+                    timestamp_utc TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS device_control_by_device (
+                    device_id TEXT PRIMARY KEY REFERENCES users(device_id) ON DELETE CASCADE,
+                    reset_revision BIGINT NOT NULL DEFAULT 0
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS device_alert_contacts (
+                    id BIGSERIAL PRIMARY KEY,
+                    device_id TEXT NOT NULL REFERENCES users(device_id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    chat_id TEXT NOT NULL,
+                    active BOOLEAN NOT NULL DEFAULT TRUE,
+                    UNIQUE (device_id, chat_id)
                 )
                 """
             )
@@ -171,17 +259,168 @@ app.add_middleware(
     allow_headers=["Accept", "Authorization", "Content-Type"],
 )
 telemetry_history: deque[TelemetryHistoryItem] = deque(maxlen=LOCAL_HISTORY_LIMIT)
-latest_phone_location: PhoneLocationUpdate | None = None
-step_reset_revision = 0
+latest_phone_location: dict[str, PhoneLocationUpdate] = {}
+step_reset_revisions: dict[str, int] = {}
 alert_contacts: list[AlertContact] = []
+alert_contacts_by_device: dict[str, list[AlertContact]] = {}
 next_alert_contact_id = 1
 alert_contacts_lock = threading.Lock()
 
 
-def _read_alert_contacts() -> list[AlertContact]:
+class TelemetryStorageError(RuntimeError):
+    pass
+
+
+def _require_auth_storage() -> None:
+    if not DATABASE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Account authentication requires persistent PostgreSQL storage.",
+        )
+    if len(JWT_SECRET_KEY) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="JWT_SECRET_KEY must contain at least 32 characters.",
+        )
+
+
+def _authenticated_user_from_row(row: tuple[object, ...] | None) -> AuthenticatedUser | None:
+    if row is None:
+        return None
+    return AuthenticatedUser(id=row[0], username=row[1], device_id=row[2])
+
+
+def _read_user_by_username(username: str) -> AuthenticatedUser | None:
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                "SELECT id, username, device_id, hashed_password FROM users WHERE username = %s",
+                (username,),
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not read the account.") from exc
+    if row is None:
+        return None
+    return AuthenticatedUser(
+        id=row[0], username=row[1], device_id=row[2], hashed_password=row[3]
+    )
+
+
+def _read_user_by_id(user_id: int) -> AuthenticatedUser | None:
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                "SELECT id, username, device_id FROM users WHERE id = %s",
+                (user_id,),
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not read the account.") from exc
+    return _authenticated_user_from_row(row)
+
+
+def _read_user_by_device_id(device_id: str) -> AuthenticatedUser | None:
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                "SELECT id, username, device_id FROM users WHERE device_id = %s",
+                (device_id,),
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not read the device owner.") from exc
+    return _authenticated_user_from_row(row)
+
+
+def _create_user(
+    username: str, hashed_password: str, device_id: str
+) -> AuthenticatedUser:
+    import psycopg
+
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+            row = connection.execute(
+                """
+                INSERT INTO users (username, hashed_password, device_id)
+                VALUES (%s, %s, %s)
+                RETURNING id, username, device_id
+                """,
+                (username, hashed_password, device_id),
+            ).fetchone()
+    except psycopg.errors.UniqueViolation as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Username or device code is already registered.",
+        ) from exc
+    except psycopg.Error as exc:
+        raise TelemetryStorageError("Could not create the account.") from exc
+    user = _authenticated_user_from_row(row)
+    if user is None:
+        raise TelemetryStorageError("Account creation returned no user.")
+    return user
+
+
+def _get_authenticated_user(
+    token: str | None = Depends(oauth2_scheme),
+) -> AuthenticatedUser:
+    _require_auth_storage()
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    subject = decode_access_token(token, JWT_SECRET_KEY)
+    if subject is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired access token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        user = _read_user_by_id(int(subject))
+    except TelemetryStorageError as exc:
+        logger.exception("Could not validate the access token.")
+        raise HTTPException(
+            status_code=503, detail="Account storage is temporarily unavailable."
+        ) from exc
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account not found.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+def _get_device_owner(device_code: str | None) -> AuthenticatedUser:
+    _require_auth_storage()
+    if device_code is None:
+        raise HTTPException(status_code=401, detail="Device pairing code is required.")
+    try:
+        device_id = hash_device_code(device_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid device pairing code.") from exc
+    try:
+        user = _read_user_by_device_id(device_id)
+    except TelemetryStorageError as exc:
+        logger.exception("Could not validate the device pairing code.")
+        raise HTTPException(
+            status_code=503, detail="Account storage is temporarily unavailable."
+        ) from exc
+    if user is None:
+        raise HTTPException(status_code=401, detail="Unregistered device.")
+    return user
+
+
+def _read_alert_contacts(device_id: str) -> list[AlertContact]:
     if not DATABASE_URL:
         with alert_contacts_lock:
-            return list(alert_contacts)
+            return list(alert_contacts_by_device.get(device_id, []))
 
     import psycopg
 
@@ -190,9 +429,11 @@ def _read_alert_contacts() -> list[AlertContact]:
             rows = connection.execute(
                 """
                 SELECT id, name, chat_id, active
-                FROM alert_contacts
+                FROM device_alert_contacts
+                WHERE device_id = %s
                 ORDER BY id
-                """
+                """,
+                (device_id,),
             ).fetchall()
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not read alert contacts.") from exc
@@ -202,7 +443,9 @@ def _read_alert_contacts() -> list[AlertContact]:
     ]
 
 
-def _create_alert_contact(contact: AlertContactCreate) -> AlertContact:
+def _create_alert_contact(
+    contact: AlertContactCreate, device_id: str
+) -> AlertContact:
     global next_alert_contact_id
     normalized_name = contact.name.strip()
     normalized_chat_id = contact.chat_id.strip()
@@ -212,10 +455,12 @@ def _create_alert_contact(contact: AlertContactCreate) -> AlertContact:
         raise HTTPException(status_code=422, detail="Chat ID must be numeric.")
 
     if not DATABASE_URL:
-        global alert_contacts
         with alert_contacts_lock:
-            if any(item.chat_id == normalized_chat_id for item in alert_contacts):
-                raise HTTPException(status_code=409, detail="Chat ID already exists.")
+            contacts = alert_contacts_by_device.setdefault(device_id, [])
+            if any(item.chat_id == normalized_chat_id for item in contacts):
+                raise HTTPException(
+                    status_code=409, detail="Chat ID already exists for this device."
+                )
             created = AlertContact(
                 id=next_alert_contact_id,
                 name=normalized_name,
@@ -223,7 +468,7 @@ def _create_alert_contact(contact: AlertContactCreate) -> AlertContact:
                 active=True,
             )
             next_alert_contact_id += 1
-            alert_contacts.append(created)
+            contacts.append(created)
             return created
 
     import psycopg
@@ -232,26 +477,31 @@ def _create_alert_contact(contact: AlertContactCreate) -> AlertContact:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
             row = connection.execute(
                 """
-                INSERT INTO alert_contacts (name, chat_id, active)
-                VALUES (%s, %s, TRUE)
+                INSERT INTO device_alert_contacts (device_id, name, chat_id, active)
+                VALUES (%s, %s, %s, TRUE)
                 RETURNING id, name, chat_id, active
                 """,
-                (normalized_name, normalized_chat_id),
+                (device_id, normalized_name, normalized_chat_id),
             ).fetchone()
     except psycopg.errors.UniqueViolation as exc:
-        raise HTTPException(status_code=409, detail="Chat ID already exists.") from exc
+        raise HTTPException(
+            status_code=409, detail="Chat ID already exists for this device."
+        ) from exc
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not create alert contact.") from exc
     return AlertContact(id=row[0], name=row[1], chat_id=row[2], active=row[3])
 
 
-def _set_alert_contact_active(contact_id: int, active: bool) -> AlertContact:
+def _set_alert_contact_active(
+    contact_id: int, active: bool, device_id: str
+) -> AlertContact:
     if not DATABASE_URL:
         with alert_contacts_lock:
-            for index, contact in enumerate(alert_contacts):
+            contacts = alert_contacts_by_device.get(device_id, [])
+            for index, contact in enumerate(contacts):
                 if contact.id == contact_id:
                     updated = contact.model_copy(update={"active": active})
-                    alert_contacts[index] = updated
+                    contacts[index] = updated
                     return updated
         raise HTTPException(status_code=404, detail="Alert contact not found.")
 
@@ -261,12 +511,12 @@ def _set_alert_contact_active(contact_id: int, active: bool) -> AlertContact:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
             row = connection.execute(
                 """
-                UPDATE alert_contacts
+                UPDATE device_alert_contacts
                 SET active = %s
-                WHERE id = %s
+                WHERE id = %s AND device_id = %s
                 RETURNING id, name, chat_id, active
                 """,
-                (active, contact_id),
+                (active, contact_id, device_id),
             ).fetchone()
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not update alert contact.") from exc
@@ -275,13 +525,13 @@ def _set_alert_contact_active(contact_id: int, active: bool) -> AlertContact:
     return AlertContact(id=row[0], name=row[1], chat_id=row[2], active=row[3])
 
 
-def _delete_alert_contact(contact_id: int) -> None:
-    global alert_contacts
+def _delete_alert_contact(contact_id: int, device_id: str) -> None:
     if not DATABASE_URL:
         with alert_contacts_lock:
-            for index, contact in enumerate(alert_contacts):
+            contacts = alert_contacts_by_device.get(device_id, [])
+            for index, contact in enumerate(contacts):
                 if contact.id == contact_id:
-                    del alert_contacts[index]
+                    del contacts[index]
                     return
         raise HTTPException(status_code=404, detail="Alert contact not found.")
 
@@ -290,7 +540,11 @@ def _delete_alert_contact(contact_id: int) -> None:
     try:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
             result = connection.execute(
-                "DELETE FROM alert_contacts WHERE id = %s", (contact_id,)
+                """
+                DELETE FROM device_alert_contacts
+                WHERE id = %s AND device_id = %s
+                """,
+                (contact_id, device_id),
             )
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not delete alert contact.") from exc
@@ -298,24 +552,13 @@ def _delete_alert_contact(contact_id: int) -> None:
         raise HTTPException(status_code=404, detail="Alert contact not found.")
 
 
-def _require_contact_management_token(authorization: str | None) -> None:
-    if not PHONE_LOCATION_TOKEN:
-        raise HTTPException(
-            status_code=503,
-            detail="Configure PHONE_LOCATION_TOKEN on the server to manage contacts.",
-        )
-    expected_authorization = f"Bearer {PHONE_LOCATION_TOKEN}"
-    if authorization is None or not hmac.compare_digest(
-        authorization.encode("utf-8"), expected_authorization.encode("utf-8")
-    ):
-        raise HTTPException(status_code=401, detail="Invalid dashboard control token.")
-
-
 def _read_telemetry_history(
-    limit: int | None, since: datetime | None = None
+    limit: int | None, device_id: str, since: datetime | None = None
 ) -> list[TelemetryHistoryItem]:
     if not DATABASE_URL:
-        records = list(telemetry_history)
+        records = [
+            record for record in telemetry_history if record.device_id == device_id
+        ]
         if since is not None:
             records = [record for record in records if record.timestamp_utc >= since]
         return records if limit is None else records[-limit:]
@@ -329,42 +572,53 @@ def _read_telemetry_history(
                     """
                     SELECT record
                     FROM telemetry_history
-                    WHERE timestamp_utc >= %s
+                    WHERE device_id = %s AND timestamp_utc >= %s
                     ORDER BY id DESC
                     LIMIT %s
                     """,
-                    (since, limit),
+                    (device_id, since, limit),
                 ).fetchall()
             elif since is not None:
                 rows = connection.execute(
                     """
                     SELECT record
                     FROM telemetry_history
-                    WHERE timestamp_utc >= %s
+                    WHERE device_id = %s AND timestamp_utc >= %s
                     ORDER BY id
                     """,
-                    (since,),
+                    (device_id, since),
                 ).fetchall()
             elif limit is not None:
                 rows = connection.execute(
                     """
                     SELECT record
                     FROM telemetry_history
+                    WHERE device_id = %s
                     ORDER BY id DESC
                     LIMIT %s
                     """,
-                    (limit,),
+                    (device_id, limit),
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    "SELECT record FROM telemetry_history ORDER BY id"
+                    """
+                    SELECT record
+                    FROM telemetry_history
+                    WHERE device_id = %s
+                    ORDER BY id
+                    """,
+                    (device_id,),
                 ).fetchall()
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not read telemetry history.") from exc
-    return [TelemetryHistoryItem.model_validate(row[0]) for row in reversed(rows)]
+    return [
+        TelemetryHistoryItem.model_validate(row[0]).model_copy(
+            update={"device_id": device_id}
+        )
+        for row in reversed(rows)
+    ]
 
-
-def _store_telemetry_record(record: TelemetryHistoryItem) -> None:
+def _store_telemetry_record(record: TelemetryHistoryItem, device_id: str) -> None:
     if not DATABASE_URL:
         telemetry_history.append(record)
         return
@@ -376,18 +630,22 @@ def _store_telemetry_record(record: TelemetryHistoryItem) -> None:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
             connection.execute(
                 """
-                INSERT INTO telemetry_history (timestamp_utc, record)
-                VALUES (%s, %s)
+                INSERT INTO telemetry_history (timestamp_utc, device_id, record)
+                VALUES (%s, %s, %s)
                 """,
-                (record.timestamp_utc, Jsonb(record.model_dump(mode="json"))),
+                (
+                    record.timestamp_utc,
+                    device_id,
+                    Jsonb(record.model_dump(mode="json")),
+                ),
             )
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not persist telemetry record.") from exc
 
 
-def _read_phone_location() -> PhoneLocationUpdate | None:
+def _read_phone_location(device_id: str) -> PhoneLocationUpdate | None:
     if not DATABASE_URL:
-        return latest_phone_location
+        return latest_phone_location.get(device_id)
 
     import psycopg
 
@@ -396,9 +654,10 @@ def _read_phone_location() -> PhoneLocationUpdate | None:
             row = connection.execute(
                 """
                 SELECT lat, lng, accuracy_m, timestamp_utc
-                FROM phone_location
-                WHERE id = 1
-                """
+                FROM phone_location_by_device
+                WHERE device_id = %s
+                """,
+                (device_id,),
             ).fetchone()
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not read the latest phone location.") from exc
@@ -412,10 +671,9 @@ def _read_phone_location() -> PhoneLocationUpdate | None:
     )
 
 
-def _store_phone_location(location: PhoneLocationUpdate) -> None:
-    global latest_phone_location
+def _store_phone_location(location: PhoneLocationUpdate, device_id: str) -> None:
     if not DATABASE_URL:
-        latest_phone_location = location
+        latest_phone_location[device_id] = location
         return
 
     import psycopg
@@ -424,15 +682,17 @@ def _store_phone_location(location: PhoneLocationUpdate) -> None:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
             connection.execute(
                 """
-                INSERT INTO phone_location (id, lat, lng, accuracy_m, timestamp_utc)
-                VALUES (1, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
+                INSERT INTO phone_location_by_device
+                    (device_id, lat, lng, accuracy_m, timestamp_utc)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (device_id) DO UPDATE SET
                     lat = EXCLUDED.lat,
                     lng = EXCLUDED.lng,
                     accuracy_m = EXCLUDED.accuracy_m,
                     timestamp_utc = EXCLUDED.timestamp_utc
                 """,
                 (
+                    device_id,
                     location.lat,
                     location.lng,
                     location.accuracy_m,
@@ -443,33 +703,33 @@ def _store_phone_location(location: PhoneLocationUpdate) -> None:
         raise TelemetryStorageError("Could not store the latest phone location.") from exc
 
 
-class TelemetryStorageError(RuntimeError):
-    pass
-
-
-def _read_step_reset_state() -> StepResetState:
+def _read_step_reset_state(device_id: str) -> StepResetState:
     if not DATABASE_URL:
-        return StepResetState(reset_revision=step_reset_revision)
+        return StepResetState(
+            reset_revision=step_reset_revisions.get(device_id, 0)
+        )
 
     import psycopg
 
     try:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
             row = connection.execute(
-                "SELECT reset_revision FROM device_control WHERE id = 1"
+                """
+                SELECT reset_revision FROM device_control_by_device
+                WHERE device_id = %s
+                """,
+                (device_id,),
             ).fetchone()
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not read the step reset state.") from exc
-    if row is None:
-        raise TelemetryStorageError("The step reset state has not been initialized.")
-    return StepResetState(reset_revision=row[0])
+    return StepResetState(reset_revision=row[0] if row is not None else 0)
 
 
-def _request_step_reset() -> StepResetState:
-    global step_reset_revision
+def _request_step_reset(device_id: str) -> StepResetState:
     if not DATABASE_URL:
-        step_reset_revision += 1
-        return StepResetState(reset_revision=step_reset_revision)
+        revision = step_reset_revisions.get(device_id, 0) + 1
+        step_reset_revisions[device_id] = revision
+        return StepResetState(reset_revision=revision)
 
     import psycopg
 
@@ -477,16 +737,19 @@ def _request_step_reset() -> StepResetState:
         with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
             row = connection.execute(
                 """
-                UPDATE device_control
-                SET reset_revision = reset_revision + 1
-                WHERE id = 1
+                INSERT INTO device_control_by_device (device_id, reset_revision)
+                VALUES (%s, 1)
+                ON CONFLICT (device_id) DO UPDATE
+                SET reset_revision = device_control_by_device.reset_revision + 1
                 RETURNING reset_revision
                 """
+                ,
+                (device_id,),
             ).fetchone()
     except psycopg.Error as exc:
         raise TelemetryStorageError("Could not request a step counter reset.") from exc
     if row is None:
-        raise TelemetryStorageError("The step reset state has not been initialized.")
+        raise TelemetryStorageError("Could not increment the step reset state.")
     return StepResetState(reset_revision=row[0])
 
 
@@ -495,13 +758,72 @@ def health_check() -> dict[str, str]:
     return {"status": "ok", "storage": "postgres" if DATABASE_URL else "memory"}
 
 
+@app.post("/api/register", response_model=PublicUser, status_code=201)
+def register_user(request: RegisterRequest) -> PublicUser:
+    _require_auth_storage()
+    username = request.username.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_.-]{3,32}", username):
+        raise HTTPException(
+            status_code=422,
+            detail="Username must be 3-32 letters, numbers, dots, underscores or hyphens.",
+        )
+    if len(request.password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=422, detail="Password must be at most 72 UTF-8 bytes."
+        )
+    try:
+        device_id = hash_device_code(request.device_id.strip())
+        hashed_password = hash_password(request.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        user = _create_user(username, hashed_password, device_id)
+    except TelemetryStorageError as exc:
+        logger.exception("Could not register account.")
+        raise HTTPException(
+            status_code=503, detail="Account storage is temporarily unavailable."
+        ) from exc
+    return PublicUser(id=user.id, username=user.username)
+
+
+@app.post("/api/login", response_model=AccessTokenResponse)
+def login_user(form: OAuth2PasswordRequestForm = Depends()) -> AccessTokenResponse:
+    _require_auth_storage()
+    try:
+        user = _read_user_by_username(form.username.strip().lower())
+    except TelemetryStorageError as exc:
+        logger.exception("Could not sign in.")
+        raise HTTPException(
+            status_code=503, detail="Account storage is temporarily unavailable."
+        ) from exc
+    if (
+        user is None
+        or user.hashed_password is None
+        or not verify_password(form.password, user.hashed_password)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return AccessTokenResponse(
+        access_token=create_access_token(str(user.id), JWT_SECRET_KEY)
+    )
+
+
+@app.get("/api/me", response_model=PublicUser)
+def get_current_account(
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
+) -> PublicUser:
+    return PublicUser(id=current_user.id, username=current_user.username)
+
+
 @app.get("/api/contacts", response_model=list[AlertContact])
 def get_alert_contacts(
-    authorization: str | None = Header(default=None),
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
 ) -> list[AlertContact]:
-    _require_contact_management_token(authorization)
     try:
-        return _read_alert_contacts()
+        return _read_alert_contacts(current_user.device_id)
     except TelemetryStorageError as exc:
         logger.exception("Could not read alert contacts.")
         raise HTTPException(
@@ -512,11 +834,10 @@ def get_alert_contacts(
 @app.post("/api/contacts", response_model=AlertContact, status_code=201)
 def add_alert_contact(
     contact: AlertContactCreate,
-    authorization: str | None = Header(default=None),
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
 ) -> AlertContact:
-    _require_contact_management_token(authorization)
     try:
-        return _create_alert_contact(contact)
+        return _create_alert_contact(contact, current_user.device_id)
     except TelemetryStorageError as exc:
         logger.exception("Could not create alert contact.")
         raise HTTPException(
@@ -528,11 +849,12 @@ def add_alert_contact(
 def update_alert_contact(
     contact_id: int,
     update: AlertContactStatus,
-    authorization: str | None = Header(default=None),
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
 ) -> AlertContact:
-    _require_contact_management_token(authorization)
     try:
-        return _set_alert_contact_active(contact_id, update.active)
+        return _set_alert_contact_active(
+            contact_id, update.active, current_user.device_id
+        )
     except TelemetryStorageError as exc:
         logger.exception("Could not update alert contact.")
         raise HTTPException(
@@ -543,11 +865,10 @@ def update_alert_contact(
 @app.delete("/api/contacts/{contact_id}", status_code=204)
 def remove_alert_contact(
     contact_id: int,
-    authorization: str | None = Header(default=None),
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
 ) -> None:
-    _require_contact_management_token(authorization)
     try:
-        _delete_alert_contact(contact_id)
+        _delete_alert_contact(contact_id, current_user.device_id)
     except TelemetryStorageError as exc:
         logger.exception("Could not delete alert contact.")
         raise HTTPException(
@@ -560,6 +881,7 @@ def get_telemetry_history(
     limit: int = 250,
     since: datetime | None = None,
     period: Literal["hour", "today", "all"] | None = None,
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
 ) -> list[TelemetryHistoryItem]:
     if period is None and (limit < 1 or limit > 250):
         raise HTTPException(status_code=422, detail="limit must be between 1 and 250.")
@@ -568,8 +890,8 @@ def get_telemetry_history(
     try:
         if period is not None:
             cutoff = since.astimezone(timezone.utc) if since is not None else None
-            return _read_telemetry_history(None, cutoff)
-        return _read_telemetry_history(limit, since)
+            return _read_telemetry_history(None, current_user.device_id, cutoff)
+        return _read_telemetry_history(limit, current_user.device_id, since)
     except TelemetryStorageError as exc:
         logger.exception("Could not read telemetry history.")
         raise HTTPException(
@@ -578,9 +900,12 @@ def get_telemetry_history(
 
 
 @app.get("/api/device/reset-state", response_model=StepResetState)
-def get_device_reset_state() -> StepResetState:
+def get_device_reset_state(
+    device_code: str | None = Header(default=None, alias="X-Device-ID"),
+) -> StepResetState:
+    user = _get_device_owner(device_code)
     try:
-        return _read_step_reset_state()
+        return _read_step_reset_state(user.device_id)
     except TelemetryStorageError as exc:
         logger.exception("Could not read the step reset state.")
         raise HTTPException(
@@ -590,20 +915,10 @@ def get_device_reset_state() -> StepResetState:
 
 @app.post("/api/device/steps/reset", response_model=StepResetState)
 def reset_device_steps(
-    authorization: str | None = Header(default=None),
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
 ) -> StepResetState:
-    if not PHONE_LOCATION_TOKEN:
-        raise HTTPException(
-            status_code=503,
-            detail="Configure PHONE_LOCATION_TOKEN on the server before resetting.",
-        )
-    expected_authorization = f"Bearer {PHONE_LOCATION_TOKEN}"
-    if authorization is None or not hmac.compare_digest(
-        authorization.encode("utf-8"), expected_authorization.encode("utf-8")
-    ):
-        raise HTTPException(status_code=401, detail="Invalid dashboard control token.")
     try:
-        return _request_step_reset()
+        return _request_step_reset(current_user.device_id)
     except TelemetryStorageError as exc:
         logger.exception("Could not request a step counter reset.")
         raise HTTPException(
@@ -614,19 +929,8 @@ def reset_device_steps(
 @app.post("/api/phone-location", response_model=PhoneLocationUpdate)
 def update_phone_location(
     location: PhoneLocationUpdate,
-    authorization: str | None = Header(default=None),
+    current_user: AuthenticatedUser = Depends(_get_authenticated_user),
 ) -> PhoneLocationUpdate:
-    if not PHONE_LOCATION_TOKEN:
-        raise HTTPException(
-            status_code=503,
-            detail="Phone location sharing is not configured on the server.",
-        )
-    expected_authorization = f"Bearer {PHONE_LOCATION_TOKEN}"
-    if authorization is None or not hmac.compare_digest(
-        authorization.encode("utf-8"), expected_authorization.encode("utf-8")
-    ):
-        raise HTTPException(status_code=401, detail="Invalid phone location token.")
-
     if location.timestamp_utc.tzinfo is None:
         raise HTTPException(
             status_code=422, detail="timestamp_utc must include a timezone."
@@ -638,7 +942,7 @@ def update_phone_location(
             status_code=422, detail="Phone location timestamp is stale or in the future."
         )
     try:
-        _store_phone_location(location)
+        _store_phone_location(location, current_user.device_id)
     except TelemetryStorageError as exc:
         logger.exception("Could not store phone location.")
         raise HTTPException(
@@ -649,6 +953,7 @@ def update_phone_location(
 
 @app.post("/api/telemetry", response_model=TelemetryResponse)
 def receive_telemetry(telemetry: Telemetry) -> TelemetryResponse:
+    user = _get_device_owner(telemetry.device_id)
     try:
         gait = analyze_gait(
             step_timestamps_ms=telemetry.step_timestamps_ms,
@@ -670,7 +975,7 @@ def receive_telemetry(telemetry: Telemetry) -> TelemetryResponse:
     if is_fall:
         phone_location_error: str | None = None
         try:
-            phone_location = _read_phone_location()
+            phone_location = _read_phone_location(user.device_id)
         except TelemetryStorageError:
             logger.exception("Could not read the latest phone location.")
             phone_location = None
@@ -721,7 +1026,9 @@ def receive_telemetry(telemetry: Telemetry) -> TelemetryResponse:
 
         try:
             active_contacts = [
-                contact for contact in _read_alert_contacts() if contact.active
+                contact
+                for contact in _read_alert_contacts(user.device_id)
+                if contact.active
             ]
         except TelemetryStorageError as exc:
             logger.exception("Could not load active alert contacts for a fall.")
@@ -778,9 +1085,10 @@ def receive_telemetry(telemetry: Telemetry) -> TelemetryResponse:
     record = TelemetryHistoryItem(
         **response.model_dump(),
         timestamp_utc=datetime.now(timezone.utc),
+        device_id=user.device_id,
     )
     try:
-        _store_telemetry_record(record)
+        _store_telemetry_record(record, user.device_id)
     except TelemetryStorageError as exc:
         logger.exception("Could not persist telemetry record.")
         raise HTTPException(
