@@ -614,6 +614,48 @@
       .password-toggle:focus-visible { outline: 2px solid #5278f4; outline-offset: 1px; }
       .activity-controls-note { color: #98a3b2; font-size: 9px; }
       .alert-contacts-panel { margin: 18px 0; }
+      .settings-grid { display: grid; gap: 18px; }
+      .settings-panel { margin: 0; }
+      .settings-info-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 16px;
+      }
+      .settings-info-item {
+        display: grid;
+        min-width: 0;
+        gap: 6px;
+        padding: 12px;
+        border: 1px solid #edf0f5;
+        border-radius: 8px;
+        background: #fafbfd;
+      }
+      .settings-info-item > span {
+        color: #8793a5;
+        font-size: 10px;
+      }
+      .settings-info-item strong {
+        overflow-wrap: anywhere;
+        color: #34425a;
+        font-size: 12px;
+      }
+      .settings-device-code { grid-column: 1 / -1; }
+      .settings-device-code code {
+        overflow-wrap: anywhere;
+        color: #566783;
+        font-size: 11px;
+      }
+      .settings-device-code small { color: #98a3b2; font-size: 9px; }
+      .settings-panel .activity-controls {
+        align-items: flex-start;
+        flex-direction: column;
+        margin: 16px 0 0;
+      }
+      .settings-panel .activity-controls-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
       .alert-contacts-help, #contacts-status { color: #8793a5; font-size: 10px; }
       .contacts-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
       .contacts-form input {
@@ -954,6 +996,8 @@
         .stat-foot { font-size: 8px; }
         .activity-settings { align-items: flex-start; flex-direction: column; }
         .activity-controls-actions { align-items: flex-start; flex-direction: column; }
+        .settings-info-grid { grid-template-columns: 1fr; }
+        .settings-device-code { grid-column: auto; }
         .panel { padding: 15px 12px 13px; }
         .panel-heading { gap: 6px; }
         .period-chip { padding: 6px 7px; font-size: 8px; }
@@ -1038,17 +1082,21 @@
 
         <div class="sidebar-label">TỔNG QUAN</div>
         <nav class="side-nav">
-          <a class="nav-link active" href="#overview" aria-current="page">
+          <a class="nav-link active" href="#overview" data-view="dashboard" aria-current="page">
             <span class="nav-icon" aria-hidden="true">◫</span>
             Bảng điều khiển
           </a>
-          <a class="nav-link" href="#gait-section">
+          <a class="nav-link" href="#gait-section" data-view="dashboard">
             <span class="nav-icon" aria-hidden="true">⌁</span>
             Phân tích dáng đi
           </a>
-          <a class="nav-link" href="#map-section">
+          <a class="nav-link" href="#map-section" data-view="dashboard">
             <span class="nav-icon" aria-hidden="true">⌖</span>
             Vị trí té ngã
+          </a>
+          <a class="nav-link" href="#profile-settings-view" data-view="settings">
+            <span class="nav-icon" aria-hidden="true">⚙</span>
+            Hồ sơ &amp; Cài đặt
           </a>
         </nav>
 
@@ -1069,7 +1117,7 @@
 
       <main class="main-content" id="overview">
         <header class="topbar">
-          <div class="breadcrumb"><span>Trang chủ</span><span class="crumb-separator">/</span><strong>Tổng quan</strong></div>
+          <div class="breadcrumb"><span>Trang chủ</span><span class="crumb-separator">/</span><strong id="breadcrumb-title">Tổng quan</strong></div>
           <div class="topbar-actions">
             <span class="live-indicator"><i></i> Đồng bộ tự động</span>
             <div class="hardware-status" aria-label="Trạng thái phần cứng ESP32">
@@ -1103,6 +1151,7 @@
           </div>
         </header>
 
+        <div id="dashboard-view">
         <section class="page-heading">
           <div>
             <p class="eyebrow">GIÁM SÁT SỨC KHỎE</p>
@@ -1181,22 +1230,6 @@
             <div class="stat-foot"><span class="stat-hint">Ước tính từ cân nặng và quãng đường</span></div>
             <div class="stat-sparkline sparkline-orange" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
           </article>
-        </section>
-
-        <section class="activity-controls" aria-label="Thiết lập và điều khiển phiên đếm">
-          <div class="activity-settings">
-            <label for="body-weight">Cân nặng
-              <input id="body-weight" type="number" min="20" max="300" step="0.5" value="65"> kg
-            </label>
-            <label for="step-length">Độ dài bước
-              <input id="step-length" type="number" min="20" max="150" step="1" value="70"> cm
-            </label>
-            <span class="activity-controls-note">Chỉ lưu trên trình duyệt này; số đo là ước tính.</span>
-          </div>
-          <div class="activity-controls-actions">
-            <span id="reset-status" role="status" aria-live="polite">Reset bắt đầu phiên mới, không xóa lịch sử.</span>
-            <button id="reset-steps-button" type="button">Reset số bước</button>
-          </div>
         </section>
 
         <section class="content-grid" id="gait-section">
@@ -1298,37 +1331,89 @@
           </div>
         </section>
 
-        <section class="panel alert-contacts-panel" id="alert-contacts-section" aria-labelledby="alert-contacts-title">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">LIÊN HỆ KHẨN CẤP</p>
-              <h2 id="alert-contacts-title">Danh sách người nhận cảnh báo Telegram</h2>
-              <p class="panel-subtitle">Người nhận đang bật sẽ nhận thông báo khi phát hiện té ngã. Dùng mã bảo mật Render ở thanh cấu hình phía trên.</p>
-            </div>
-            <button id="contacts-refresh" type="button">Làm mới</button>
-          </div>
-          <form class="contacts-form" id="contact-add-form">
-            <input id="contact-name" type="text" maxlength="80" autocomplete="name" aria-label="Tên người thân" placeholder="Tên người thân" required>
-            <input id="contact-chat-id" type="text" maxlength="32" pattern="-?[0-9]+" inputmode="numeric" aria-label="Telegram Chat ID" placeholder="Telegram Chat ID" required>
-            <button id="contact-add-button" type="submit">+ Thêm người nhận</button>
-          </form>
-          <p id="contacts-status" role="status" aria-live="polite">Nhập mã bảo mật Render ở thanh cấu hình, sau đó chọn “Làm mới”.</p>
-          <div class="contacts-table-wrap">
-            <table class="contacts-table">
-              <thead>
-                <tr><th>Tên người thân</th><th>Telegram Chat ID</th><th>Trạng thái</th><th>Thao tác</th></tr>
-              </thead>
-              <tbody id="contacts-list">
-                <tr><td class="contacts-empty" colspan="4">Chưa tải danh sách người nhận.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
         <footer class="page-footer">
           <span>GaitWatch <span aria-hidden="true">·</span> Giám sát an toàn chuyển động</span>
           <span id="last-updated">Chưa đồng bộ</span>
         </footer>
+        </div>
+
+        <section id="profile-settings-view" hidden aria-labelledby="settings-title">
+          <section class="page-heading">
+            <div>
+              <p class="eyebrow">TÀI KHOẢN</p>
+              <h1 id="settings-title">Hồ sơ &amp; Cài đặt</h1>
+              <p class="page-subtitle">Quản lý thông tin, thiết bị và người nhận cảnh báo.</p>
+            </div>
+          </section>
+
+          <div class="settings-grid">
+            <section class="panel settings-panel" aria-labelledby="profile-device-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">HỒ SƠ</p>
+                  <h2 id="profile-device-title">Thông tin cá nhân &amp; Thiết bị</h2>
+                </div>
+              </div>
+              <div class="settings-info-grid">
+                <div class="settings-info-item">
+                  <span>Tên tài khoản</span>
+                  <strong id="settings-username">—</strong>
+                </div>
+                <div class="settings-info-item">
+                  <span>Thiết bị ESP32</span>
+                  <strong>Đã liên kết</strong>
+                </div>
+                <div class="settings-info-item settings-device-code">
+                  <span>Mã ghép ESP32</span>
+                  <code>GW-ESP32-NHOM11-2026-•••••••••••</code>
+                  <small>Mã bí mật không được lưu dưới dạng có thể xem lại.</small>
+                </div>
+              </div>
+              <div class="activity-controls" aria-label="Thiết lập chỉ số và điều khiển phiên đếm">
+                <div class="activity-settings">
+                  <label for="body-weight">Cân nặng
+                    <input id="body-weight" type="number" min="20" max="300" step="0.5" value="65"> kg
+                  </label>
+                  <label for="step-length">Độ dài bước
+                    <input id="step-length" type="number" min="20" max="150" step="1" value="70"> cm
+                  </label>
+                  <span class="activity-controls-note">Chỉ lưu trên trình duyệt này; số đo là ước tính.</span>
+                </div>
+                <div class="activity-controls-actions">
+                  <span id="reset-status" role="status" aria-live="polite">Reset bắt đầu phiên mới, không xóa lịch sử.</span>
+                  <button id="reset-steps-button" type="button">Reset số bước</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel settings-panel alert-contacts-panel" id="alert-contacts-section" aria-labelledby="alert-contacts-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">LIÊN HỆ KHẨN CẤP</p>
+                  <h2 id="alert-contacts-title">Cài đặt Cảnh báo té ngã</h2>
+                  <p class="panel-subtitle">Người nhận đang bật sẽ nhận cảnh báo Telegram khi thiết bị phát hiện té ngã.</p>
+                </div>
+                <button id="contacts-refresh" type="button">Làm mới</button>
+              </div>
+              <form class="contacts-form" id="contact-add-form">
+                <input id="contact-name" type="text" maxlength="80" autocomplete="name" aria-label="Tên người thân" placeholder="Tên người thân" required>
+                <input id="contact-chat-id" type="text" maxlength="32" pattern="-?[0-9]+" inputmode="numeric" aria-label="Telegram Chat ID" placeholder="Telegram Chat ID" required>
+                <button id="contact-add-button" type="submit">+ Thêm người nhận</button>
+              </form>
+              <p id="contacts-status" role="status" aria-live="polite">Đang tải danh sách người nhận...</p>
+              <div class="contacts-table-wrap">
+                <table class="contacts-table">
+                  <thead>
+                    <tr><th>Tên người thân</th><th>Telegram Chat ID</th><th>Trạng thái</th><th>Thao tác</th></tr>
+                  </thead>
+                  <tbody id="contacts-list">
+                    <tr><td class="contacts-empty" colspan="4">Chưa tải danh sách người nhận.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -2551,6 +2636,7 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
+          initializeDashboardNavigation();
           initializePasswordToggle(
             "login-password",
             "login-password-toggle",
@@ -2576,6 +2662,8 @@
               document.getElementById("header-username").textContent =
                 user.username;
               document.getElementById("profile-username").textContent =
+                user.username;
+              document.getElementById("settings-username").textContent =
                 user.username;
               initializeDashboard();
             })
@@ -2607,6 +2695,49 @@
             });
           loadTelemetry();
           window.setInterval(loadTelemetry, POLL_INTERVAL_MS);
+        }
+
+        function initializeDashboardNavigation() {
+          const dashboardView = document.getElementById("dashboard-view");
+          const settingsView = document.getElementById("profile-settings-view");
+          const dateChip = document.querySelector(".date-chip");
+          const breadcrumbTitle = document.getElementById("breadcrumb-title");
+          const navigationLinks = Array.from(
+            document.querySelectorAll(".side-nav .nav-link")
+          );
+
+          navigationLinks.forEach(function (link) {
+            link.addEventListener("click", function (event) {
+              event.preventDefault();
+              const isSettings = link.dataset.view === "settings";
+              dashboardView.hidden = isSettings;
+              settingsView.hidden = !isSettings;
+              dateChip.hidden = isSettings;
+              breadcrumbTitle.textContent = isSettings
+                ? "Hồ sơ & Cài đặt"
+                : "Tổng quan";
+
+              navigationLinks.forEach(function (navigationLink) {
+                const isActive = navigationLink === link;
+                navigationLink.classList.toggle("active", isActive);
+                if (isActive) {
+                  navigationLink.setAttribute("aria-current", "page");
+                } else {
+                  navigationLink.removeAttribute("aria-current");
+                }
+              });
+
+              history.replaceState(null, "", link.getAttribute("href"));
+              if (!isSettings && link.hash !== "#overview") {
+                const target = document.querySelector(link.hash);
+                if (target) {
+                  target.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              } else {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            });
+          });
         }
       })();
     </script>
