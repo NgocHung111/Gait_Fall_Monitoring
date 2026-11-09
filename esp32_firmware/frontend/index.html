@@ -120,9 +120,54 @@
         border-color: #8ca5f8;
         outline: 3px solid rgba(82, 120, 244, .12);
       }
-      .auth-password-field { display: flex; width: 100%; }
-      .auth-password-field input { padding-right: 42px; }
-      .auth-password-field .password-toggle {
+      .auth-device-code {
+        position: relative;
+        display: flex;
+        width: 100%;
+        align-items: stretch;
+        overflow: hidden;
+        border: 1px solid #dfe5ef;
+        border-radius: 8px;
+        background: white;
+        transition: border-color 160ms ease, box-shadow 160ms ease;
+      }
+      .auth-device-code:focus-within {
+        border-color: #8ca5f8;
+        box-shadow: 0 0 0 3px rgba(82, 120, 244, .12);
+      }
+      .auth-device-prefix {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        padding: 0 8px;
+        border-right: 1px solid #e5e9f0;
+        color: #64728a;
+        background: #f3f5f8;
+        font-size: 10px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .auth-device-code input.auth-device-suffix {
+        flex: 1 1 auto;
+        width: 0;
+        min-width: 0;
+        padding: 11px 40px 11px 9px;
+        border: 0;
+        border-radius: 0;
+        outline: 0;
+        box-shadow: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .auth-device-code input.auth-device-suffix:focus {
+        border: 0;
+        outline: 0;
+        box-shadow: none;
+      }
+      .auth-device-code.input-invalid {
+        border-color: #d66b6b;
+        box-shadow: 0 0 0 3px rgba(214, 107, 107, .12);
+      }
+      .auth-device-code .password-toggle {
         right: 5px;
         width: 32px;
         height: 32px;
@@ -952,12 +997,13 @@
             <input id="register-password" name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
           </label>
           <label for="register-device-id">Mã ghép thiết bị ESP32
-            <div class="password-field auth-password-field">
-              <input id="register-device-id" name="device_id" type="password" minlength="11" maxlength="32" pattern="[\w\x2D]+" placeholder="GW-ESP32-NHOM11-2026-a1b2c3d4e5f" autocomplete="off" required>
+            <div class="password-field auth-device-code">
+              <span class="auth-device-prefix" aria-hidden="true">GW-ESP32-NHOM11-2026-</span>
+              <input class="auth-device-suffix" id="register-device-id" name="device_code_suffix" type="password" minlength="11" maxlength="11" pattern="[\w\x2D]{11}" placeholder="BMfewaUQGCY" autocomplete="off" required>
               <button class="password-toggle" id="register-device-id-toggle" type="button" aria-label="Hiện mã ghép thiết bị" aria-controls="register-device-id" aria-pressed="false" title="Hiện mã ghép thiết bị"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" /></svg></button>
             </div>
           </label>
-          <p class="auth-help">Tiền tố cố định: GW-ESP32-NHOM11-2026- (nhập thêm 11 ký tự mã bí mật ở cuối).</p>
+          <p class="auth-help">Tiền tố GW-ESP32-NHOM11-2026- đã có sẵn; nhập đúng 11 ký tự bí mật ở ô bên cạnh.</p>
           <button class="auth-submit" id="register-submit" type="submit">Tạo tài khoản</button>
         </form>
         <p id="auth-status" role="status" aria-live="polite"></p>
@@ -1359,6 +1405,21 @@
           const registerForm = document.getElementById("register-form");
           const loginButton = document.getElementById("login-submit");
           const registerButton = document.getElementById("register-submit");
+          const deviceCodeInput = document.getElementById("register-device-id");
+          const deviceCodeGroup = deviceCodeInput.closest(".auth-device-code");
+
+          deviceCodeInput.addEventListener("invalid", function (event) {
+            event.preventDefault();
+            deviceCodeGroup.classList.add("input-invalid");
+            deviceCodeInput.setAttribute("aria-invalid", "true");
+            setStatus("Vui lòng nhập đủ 11 ký tự mã bí mật của thiết bị.");
+          });
+          deviceCodeInput.addEventListener("input", function () {
+            deviceCodeGroup.classList.remove("input-invalid");
+            deviceCodeInput.removeAttribute("aria-invalid");
+            setStatus("");
+          });
+
           document.getElementById("login-tab").addEventListener("click", function () {
             setActiveTab(false);
           });
@@ -1388,29 +1449,23 @@
             setStatus("");
             const username = document.getElementById("register-username").value.trim();
             const password = document.getElementById("register-password").value;
-            const deviceIdInput = document.getElementById("register-device-id");
-            let deviceId = deviceIdInput.value.trim();
+            const deviceCodeSuffix = deviceCodeInput.value.trim();
             try {
-              if (
-                !deviceId.startsWith(DEVICE_CODE_PREFIX) &&
-                deviceId.length === DEVICE_CODE_SUFFIX_LENGTH
-              ) {
-                deviceId = DEVICE_CODE_PREFIX + deviceId;
-                deviceIdInput.value = deviceId;
-              }
-              const deviceCodeSuffix = deviceId.startsWith(DEVICE_CODE_PREFIX)
-                ? deviceId.slice(DEVICE_CODE_PREFIX.length)
-                : "";
               if (
                 deviceCodeSuffix.length !== DEVICE_CODE_SUFFIX_LENGTH ||
                 !/^[A-Za-z0-9_-]+$/.test(deviceCodeSuffix)
               ) {
                 setStatus(
-                  "Mã ghép cần có tiền tố GW-ESP32-NHOM11-2026- và đúng 11 ký tự bí mật ở cuối."
+                  "Mã bí mật cần đúng 11 ký tự chữ hoặc số."
                 );
-                deviceIdInput.focus();
+                deviceCodeGroup.classList.add("input-invalid");
+                deviceCodeInput.setAttribute("aria-invalid", "true");
+                deviceCodeInput.focus();
                 return;
               }
+              deviceCodeGroup.classList.remove("input-invalid");
+              deviceCodeInput.removeAttribute("aria-invalid");
+              const deviceId = DEVICE_CODE_PREFIX + deviceCodeSuffix;
               const response = await fetch(apiUrl("/api/register"), {
                 method: "POST",
                 headers: {
