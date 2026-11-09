@@ -390,6 +390,28 @@
         font: inherit;
         font-size: 10px;
       }
+      .password-field { position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; }
+      .activity-controls-actions .password-field { width: 150px; }
+      .password-field input { width: 100%; padding-right: 34px; }
+      .phone-location-form .password-field { min-width: 180px; flex: 1 1 180px; }
+      .phone-location-form .password-field input { min-width: 0; }
+      .password-toggle {
+        position: absolute;
+        right: 6px;
+        display: grid;
+        width: 24px;
+        height: 24px;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        color: #738198;
+        background: transparent;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .password-toggle:hover { background: #f0f3f8; }
+      .password-toggle:focus-visible { outline: 2px solid #5278f4; outline-offset: 1px; }
       .activity-controls-note { color: #98a3b2; font-size: 9px; }
       .alert-contacts-panel { margin: 18px 0; }
       .alert-contacts-help, #contacts-status { color: #8793a5; font-size: 10px; }
@@ -654,6 +676,11 @@
         font-weight: 600;
         cursor: pointer;
       }
+      .phone-location-form button.password-toggle {
+        padding: 0;
+        color: #738198;
+        background: transparent;
+      }
       .phone-location-form button.secondary { color: #5e6b80; background: #e9edf4; }
       .phone-location-form button:disabled { opacity: .55; cursor: default; }
       #phone-location-status {
@@ -903,7 +930,10 @@
           </div>
           <div class="activity-controls-actions">
             <span id="reset-status" role="status" aria-live="polite">Reset bắt đầu phiên mới, không xóa lịch sử.</span>
-            <input id="device-control-token" type="password" autocomplete="off" aria-label="Mã bảo mật Render" placeholder="Mã bảo mật Render">
+            <div class="password-field">
+              <input id="device-control-token" type="password" autocomplete="off" aria-label="Mã bảo mật Render" placeholder="Mã bảo mật Render">
+              <button class="password-toggle" id="device-control-token-toggle" type="button" aria-label="Hiện mã bảo mật Render" aria-controls="device-control-token" aria-pressed="false" title="Hiện mã bảo mật">👁️</button>
+            </div>
             <button id="reset-steps-button" type="button">Reset số bước</button>
           </div>
         </section>
@@ -975,7 +1005,10 @@
               Mở trang này trên điện thoại, bật chia sẻ vị trí và giữ trang hoạt động. Điện thoại cần đi cùng người đeo thiết bị.
             </div>
             <div class="phone-location-form">
-              <input id="phone-location-token" type="password" autocomplete="off" aria-label="Mã chia sẻ vị trí" placeholder="Mã chia sẻ vị trí">
+              <div class="password-field">
+                <input id="phone-location-token" type="password" autocomplete="off" aria-label="Mã chia sẻ vị trí" placeholder="Mã chia sẻ vị trí">
+                <button class="password-toggle" id="phone-location-token-toggle" type="button" aria-label="Hiện mã chia sẻ vị trí" aria-controls="phone-location-token" aria-pressed="false" title="Hiện mã chia sẻ vị trí">👁️</button>
+              </div>
               <button id="phone-location-start" type="button">Bật vị trí</button>
               <button id="phone-location-stop" class="secondary" type="button" disabled>Tắt</button>
             </div>
@@ -1408,6 +1441,21 @@
         let lastTelemetryRecords = [];
         let historyLoaded = false;
         let resetPendingSince = null;
+
+        function initializePasswordToggle(inputId, buttonId, label) {
+          const input = document.getElementById(inputId);
+          const button = document.getElementById(buttonId);
+          button.addEventListener("click", function () {
+            const isVisible = input.type === "password";
+            input.type = isVisible ? "text" : "password";
+            button.setAttribute("aria-pressed", String(isVisible));
+            button.setAttribute(
+              "aria-label",
+              (isVisible ? "Ẩn " : "Hiện ") + label
+            );
+            button.title = (isVisible ? "Ẩn " : "Hiện ") + label;
+          });
+        }
         let alertContacts = [];
 
         function formatMetric(value, digits) {
@@ -2076,6 +2124,16 @@
           if (window.GaitWatchMap) {
             window.GaitWatchMap.initialize();
           }
+          initializePasswordToggle(
+            "device-control-token",
+            "device-control-token-toggle",
+            "mã bảo mật Render"
+          );
+          initializePasswordToggle(
+            "phone-location-token",
+            "phone-location-token-toggle",
+            "mã chia sẻ vị trí"
+          );
           window.GaitWatchPhoneLocation.initialize();
           initializeActivityControls();
           initializeAlertContacts();
