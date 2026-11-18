@@ -7,6 +7,7 @@
 #include <Preferences.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <cstring>
 #include "imu_sensor.h"
@@ -28,6 +29,7 @@ constexpr float BATTERY_DIVIDER_MULTIPLIER = 2.0f;
 constexpr float BATTERY_EMPTY_VOLTAGE = 3.2f;
 constexpr float BATTERY_FULL_VOLTAGE = 4.2f;
 constexpr uint8_t BATTERY_ADC_SAMPLE_COUNT = 8;
+constexpr unsigned long STEP_TELEMETRY_INTERVAL_MS = 1000UL;
 
 struct StepTelemetrySnapshot {
     uint32_t steps;
@@ -37,6 +39,8 @@ struct StepTelemetrySnapshot {
 };
 
 QueueHandle_t stepTelemetryQueue = nullptr;
+SemaphoreHandle_t telemetryHttpMutex = nullptr;
+HTTPClient telemetryHttp;
 bool isAlerting = false;
 unsigned long alertStartTime = 0;
 unsigned long lastWiFiAttempt = 0;
@@ -115,6 +119,10 @@ void setup() {
         wifiSetupPortal.startPortal();
     }
     stepTelemetryQueue = xQueueCreate(1, sizeof(StepTelemetrySnapshot));
+    telemetryHttpMutex = xSemaphoreCreateMutex();
+    if (telemetryHttpMutex == nullptr) {
+        Serial.println("ERROR: Could not create the telemetry HTTP mutex.");
+    }
     if (stepTelemetryQueue == nullptr) {
         Serial.println("ERROR: Could not create the step telemetry queue.");
     } else if (xTaskCreate(stepTelemetryTask, "stepTelemetry", 6144, nullptr, 1,
@@ -158,29 +166,38 @@ bool postTelemetry(JsonDocument& doc, const char* description,
     const String endpoint = String(SERVER_URL) + "/api/telemetry";
     Serial.printf("[HTTP] POST %s\n", endpoint.c_str());
 
-    HTTPClient http;
-    http.setTimeout(timeoutMs);
-    if (!http.begin(endpoint)) {
-        Serial.println("ERROR: Could not initialize HTTP connection.");
+    if (telemetryHttpMutex == nullptr ||
+        xSemaphoreTake(telemetryHttpMutex, pdMS_TO_TICKS(timeoutMs)) != pdTRUE) {
+        Serial.println("ERROR: Could not acquire the telemetry HTTP client.");
         return false;
     }
-    http.addHeader("Content-Type", "application/json");
+
+    telemetryHttp.setReuse(true);
+    telemetryHttp.setTimeout(timeoutMs);
+    telemetryHttp.setConnectTimeout(timeoutMs);
+    if (!telemetryHttp.begin(endpoint)) {
+        Serial.println("ERROR: Could not initialize HTTP connection.");
+        xSemaphoreGive(telemetryHttpMutex);
+        return false;
+    }
+    telemetryHttp.addHeader("Content-Type", "application/json");
 
     const unsigned long requestStartTime = millis();
-    const int statusCode = http.POST(payload);
+    const int statusCode = telemetryHttp.POST(payload);
     const unsigned long responseTimeMs = millis() - requestStartTime;
     Serial.printf("[HTTP] Response code: %d; response time: %lu ms.\n",
                   statusCode, responseTimeMs);
 
     if (statusCode > 0) {
-        responseBody = http.getString();
+        responseBody = telemetryHttp.getString();
         Serial.println("[HTTP] Backend response:");
         Serial.println(responseBody);
     } else {
         Serial.printf("[HTTP] Request failed: %s\n",
-                      http.errorToString(statusCode).c_str());
+                      telemetryHttp.errorToString(statusCode).c_str());
     }
-    http.end();
+    telemetryHttp.end();
+    xSemaphoreGive(telemetryHttpMutex);
 
     if (statusCode != HTTP_CODE_OK) {
         Serial.printf("ERROR: Backend returned HTTP status %d for %s.\n",
@@ -356,6 +373,7 @@ void stepTelemetryTask(void*)
 
 void loop() {
     unsigned long now = millis();
+    static unsigned long lastStepTelemetryQueuedAt = 0;
 
     if (wifiDisconnectedEventPending) {
         const uint8_t reason = wifiDisconnectReason;
@@ -464,6 +482,8 @@ void loop() {
     }
 
     if (stepDetected && WiFi.status() == WL_CONNECTED &&
+        (lastStepTelemetryQueuedAt == 0 ||
+         now - lastStepTelemetryQueuedAt >= STEP_TELEMETRY_INTERVAL_MS) &&
         stepCounter.getStepCount() > lastReportedStepCount) {
         if (stepTelemetryQueue == nullptr) {
             Serial.println("ERROR: Step update skipped because the telemetry task is unavailable.");
@@ -475,6 +495,7 @@ void loop() {
                 stepCounter.getRecentStepIntervals(snapshot.intervals, 10);
             if (xQueueOverwrite(stepTelemetryQueue, &snapshot) == pdPASS) {
                 lastReportedStepCount = snapshot.steps;
+                lastStepTelemetryQueuedAt = now;
             } else {
                 Serial.println("ERROR: Could not queue the step telemetry update.");
             }
