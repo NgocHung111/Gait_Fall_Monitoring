@@ -374,6 +374,7 @@ void stepTelemetryTask(void*)
 void loop() {
     unsigned long now = millis();
     static unsigned long lastStepTelemetryQueuedAt = 0;
+    static bool stepTelemetryPending = false;
 
     if (wifiDisconnectedEventPending) {
         const uint8_t reason = wifiDisconnectReason;
@@ -481,10 +482,14 @@ void loop() {
         }
     }
 
-    if (stepDetected && WiFi.status() == WL_CONNECTED &&
-        (lastStepTelemetryQueuedAt == 0 ||
-         now - lastStepTelemetryQueuedAt >= STEP_TELEMETRY_INTERVAL_MS) &&
+    if (stepDetected &&
         stepCounter.getStepCount() > lastReportedStepCount) {
+        stepTelemetryPending = true;
+    }
+
+    if (stepTelemetryPending && WiFi.status() == WL_CONNECTED &&
+        (lastStepTelemetryQueuedAt == 0 ||
+         now - lastStepTelemetryQueuedAt >= STEP_TELEMETRY_INTERVAL_MS)) {
         if (stepTelemetryQueue == nullptr) {
             Serial.println("ERROR: Step update skipped because the telemetry task is unavailable.");
         } else {
@@ -496,6 +501,7 @@ void loop() {
             if (xQueueOverwrite(stepTelemetryQueue, &snapshot) == pdPASS) {
                 lastReportedStepCount = snapshot.steps;
                 lastStepTelemetryQueuedAt = now;
+                stepTelemetryPending = false;
             } else {
                 Serial.println("ERROR: Could not queue the step telemetry update.");
             }
